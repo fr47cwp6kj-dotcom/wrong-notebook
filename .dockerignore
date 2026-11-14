@@ -1,0 +1,54 @@
+# Docker 构建时排除的文件
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# 依赖和构建产物
+node_modules
+npm-debug.log
+.next
+dist
+
+# 版本控制
+.git
+.gitignore
+
+# 环境配置
+.env
+.env.*
+# 本机配置与登录凭据（含密钥），运行时由挂载的配置目录提供
+config/app-config.json
+config/minimax-code.json
+
+# 构建阶段运行单元/集成测试；最终 standalone 镜像不复制测试目录
+coverage
+
+# E2E 测试文件 (Playwright)
+e2e
+playwright.config.ts
+playwright-report
+test-results
+blob-report
+test_output*.txt
+
+# 开发工具
+.vscode
+.idea
+*.log
+.github
+.gitea
+__pycache__
+*.pyc
+*.tsbuildinfo
+
+# 本地数据库
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+/prisma/*.db
+
+# 文档
+README.md
+docs
+doc

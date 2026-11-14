@@ -1,0 +1,704 @@
+import type { GapInput, GapResult } from '../knowledge-gaps';
+import { parseGapResult } from './gap-result';
+import OpenAI from "openai";
+import type { ChatCompletion } from "openai/resources/chat/completions";
+import { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
+import { generateGapPrompt, generateAnalyzePrompt, generateSimilarQuestionPrompt, generateMasteryPrompt, generateGradingPrompt, generateTagSuggestPrompt, generateFigurePrompt, generateSvgAnimationPrompt, generateLatexFixPrompt, SVG_ANIMATION_REQUEST } from './prompts';
+import { sanitizeSvgAnimation } from '../svg-animation';
+import { parseLatexFix } from './latex-fix';
+import type { LatexFixInput, LatexFixResult } from './latex-fix';
+import { getAppConfig } from '../config';
+import { safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseQuestionKnowledgePoints, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
+import { prefetchSubjectTags } from './tag-service';
+import { createLogger } from '../logger';
+import { AI_OUTPUT_TRUNCATED, withTruncationRetry } from './truncation';
+import { normalizeMistakeStatusForSave } from '../mistake-status';
+import { normalizeGeneratedQuestion } from './generated-question';
+import { VENDOR_PRESETS } from './vendor-presets';
+
+const logger = createLogger('ai:openai');
+
+/** 发给 LongCat 的消息内容片段：OpenAI 格式的文字、图片，以及 LongCat 的 input_image */
+type LongCatContentPart =
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string } }
+    | { type: 'input_image'; input_image: { data: string[]; type: 'url' } };
+
+interface LongCatMessage {
+    role: string;
+    content: string | LongCatContentPart[];
+}
+
+export const DEFAULT_OPENAI_MODEL = 'gpt-6.1-sol';
+
+type OpenAIUserContent = string | Array<
+    { type: "text"; text: string } |
+    { type: "image_url"; image_url: { url: string } }
+>;
+
+export class OpenAIProvider implements AIService {
+    private openai: OpenAI;
+    private model: string;
+    private baseURL: string;
+    private apiKey: string;
+    private isLongCat: boolean;
+
+    constructor(config?: AIConfig) {
+        const apiKey = config?.apiKey;
+        const baseURL = config?.baseUrl;
+
+        if (!apiKey) {
+            throw new Error("AI_AUTH_ERROR: OPENAI_API_KEY is required for OpenAI provider");
+        }
+
+        this.openai = new OpenAI({
+            apiKey: apiKey,
+            baseURL: baseURL || undefined,
+            defaultHeaders: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+        });
+
+        this.model = config?.model || DEFAULT_OPENAI_MODEL;
+        this.baseURL = baseURL || 'https://api.openai.com/v1';
+        this.apiKey = apiKey;
+        this.isLongCat = this.baseURL.includes('longcat.chat');
+
+        logger.info({
+            provider: 'OpenAI',
+            model: this.model,
+            baseURL: this.baseURL,
+            apiKeyPrefix: apiKey.substring(0, 8) + '...'
+        }, 'AI Provider initialized');
+    }
+
+    private adaptMessagesForLongCat(messages: LongCatMessage[]): LongCatMessage[] {
+        return messages.map(msg => {
+            if (typeof msg.content === 'string') {
+                return { ...msg, content: [{ type: 'text', text: msg.content }] };
+            }
+            if (Array.isArray(msg.content)) {
+                const adapted = msg.content.map((part): LongCatContentPart => {
+                    if (part.type === 'image_url') {
+                        return {
+                            type: 'input_image',
+                            input_image: { data: [part.image_url.url], type: 'url' }
+                        };
+                    }
+                    return part;
+                });
+                return { ...msg, content: adapted };
+            }
+            return msg;
+        });
+    }
+
+    private extractTag(text: string, tagName: string): string | null {
+        const startTag = `<${tagName}>`;
+        const endTag = `</${tagName}>`;
+        const startIndex = text.indexOf(startTag);
+
+        // 如果找不到开始标签，返回 null
+        if (startIndex === -1) {
+            return null;
+        }
+
+        const contentStartIndex = startIndex + startTag.length;
+        const endIndex = text.lastIndexOf(endTag);
+
+        // 特殊处理：如果闭合标签丢失（通常主要发生在最后的 analysis 标签被截断时）
+        // 我们尝试读取到字符串末尾
+        if (endIndex === -1 && tagName === 'analysis') {
+            logger.warn({ tagName }, 'Tag was verified unclosed, treating as truncated and reading to end');
+            return text.substring(contentStartIndex).trim();
+        }
+
+        if (endIndex === -1 || contentStartIndex >= endIndex) {
+            return null;
+        }
+
+        return text.substring(contentStartIndex, endIndex).trim();
+    }
+
+    private parseResponse(text: string): ParsedQuestion {
+        logger.debug({ textLength: text.length }, 'Parsing AI response');
+
+        const questionText = this.extractTag(text, "question_text");
+        const answerText = this.extractTag(text, "answer_text");
+        const analysis = this.extractTag(text, "analysis");
+        const subjectRaw = this.extractTag(text, "subject");
+        const knowledgePointsRaw = this.extractTag(text, "knowledge_points");
+        const requiresImageRaw = this.extractTag(text, "requires_image");
+        const wrongAnswerText = this.extractTag(text, "wrong_answer_text") || "";
+        const mistakeAnalysis = this.extractTag(text, "mistake_analysis") || "";
+        const mistakeStatusRaw = this.extractTag(text, "mistake_status");
+
+        // Basic Validation
+        if (!questionText || !answerText || !analysis) {
+            logger.error({ rawTextSample: text.substring(0, 500) }, 'Missing critical XML tags');
+            throw new Error("Invalid AI response: Missing critical XML tags (<question_text>, <answer_text>, or <analysis>)");
+        }
+
+        // Process Subject
+        let subject: ParsedQuestion['subject'] = '其他';
+        const validSubjects: ParsedQuestion['subject'][] = ["数学", "物理", "化学", "生物", "英语", "语文", "历史", "地理", "政治", "其他"];
+        if (subjectRaw && (validSubjects as string[]).includes(subjectRaw)) {
+            subject = subjectRaw as ParsedQuestion['subject'];
+        }
+
+        // Process Knowledge Points
+        let knowledgePoints: string[] = [];
+        if (knowledgePointsRaw) {
+            // Split by comma or newline, trim whitespaces
+            knowledgePoints = knowledgePointsRaw.split(/[,，\n]/).map(k => k.trim()).filter(k => k.length > 0);
+        }
+
+        // Process requiresImage (default to false if not present or unrecognized)
+        const requiresImage = requiresImageRaw?.toLowerCase().trim() === 'true';
+        const mistakeStatus = normalizeMistakeStatusForSave(mistakeStatusRaw, wrongAnswerText);
+
+        // Construct Result
+        const result: ParsedQuestion = {
+            questionText,
+            answerText,
+            analysis,
+            wrongAnswerText,
+            mistakeAnalysis,
+            mistakeStatus,
+            subject,
+            knowledgePoints,
+            questionKnowledgePoints: parseQuestionKnowledgePoints(this.extractTag(text, "question_knowledge_points")),
+            requiresImage,
+            difficultyStars: parseDifficultyStars(this.extractTag(text, "difficulty_stars")),
+            ...parseFigure(this.extractTag(text, "has_figure"), this.extractTag(text, "figure_svg")),
+        };
+
+        // Final Schema Validation (just to be safe, though likely compliant by now)
+        const validation = safeParseParsedQuestion(result);
+        if (validation.success) {
+            logger.debug('Validated successfully via XML tags');
+            return validation.data;
+        } else {
+            logger.warn({ validationError: validation.error.format() }, 'Schema validation warning');
+            // We still return it as we trust our extraction more than the schema at this point (or we can throw)
+            // Let's return the extracted data to be permissive
+            return result;
+        }
+    }
+
+    async analyzeImage(imageBase64: string, mimeType: string = "image/jpeg", language: 'zh' | 'en' = 'zh', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ParsedQuestion> {
+        const config = getAppConfig();
+        const baseUrl = this.baseURL.replace(/\/+$/, '');
+        // 智谱视觉模型的思考可能耗尽输出额度，导致整次图片请求重试。
+        const useLowReasoning = this.model === 'glm-5.3-flash'
+            && (baseUrl === VENDOR_PRESETS.glm.baseUrl || baseUrl === 'https://api.z.ai/api/paas/v4');
+        const reasoningOptions = useLowReasoning ? { reasoning_effort: 'low' as const } : {};
+
+        // 有错题本学段 + 学科时直接使用其全部知识点，否则按学科、年级取标签
+        const tagOptions = candidateTags ? { candidateTags } : await prefetchSubjectTags(subject);
+
+        const systemPrompt = generateAnalyzePrompt(language, grade, subject, {
+            customTemplate: config.prompts?.analyze,
+            ...tagOptions,
+        }, gradeSemester);
+
+        logger.box('🔍 AI Image Analysis Request', {
+            provider: 'OpenAI',
+            endpoint: `${this.baseURL}/chat/completions`,
+            imageSize: `${imageBase64.length} bytes`,
+            mimeType,
+            model: this.model,
+            language,
+            grade: grade || 'all'
+        });
+        logger.box('📝 Full System Prompt', systemPrompt);
+
+        try {
+            // 构建请求参数（用于日志显示，图片数据截断）
+            const requestParamsForLog = {
+                model: this.model,
+                messages: [
+                    {
+                        role: "system",
+                        content: systemPrompt
+                    },
+                    {
+                        role: "user",
+                        content: [
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: `data:${mimeType};base64,[...${imageBase64.length} bytes base64 data...]`,
+                                },
+                            },
+                        ],
+                    },
+                ],
+                max_tokens: 8192,
+                ...reasoningOptions,
+            };
+
+            logger.box('📤 API Request (发送给 AI 的原始请求)', JSON.stringify(requestParamsForLog, null, 2));
+
+            let response: ChatCompletion;
+
+            if (this.isLongCat) {
+                // LongCat 使用不同的多模态格式，绕过 SDK 直接请求
+                const messages = this.adaptMessagesForLongCat([
+                    { role: "system", content: systemPrompt },
+                    {
+                        role: "user",
+                        content: [
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: `data:${mimeType};base64,${imageBase64}`,
+                                },
+                            },
+                        ],
+                    },
+                ]);
+
+                const res = await fetch(`${this.baseURL}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: this.model,
+                        messages,
+                        max_tokens: 8192,
+                    }),
+                });
+
+                if (!res.ok) {
+                    const errBody = await res.text();
+                    logger.error({ status: res.status, body: errBody }, 'LongCat API error');
+                    throw new Error(`${res.status} status code (${errBody})`);
+                }
+
+                response = await res.json() as ChatCompletion;
+            } else {
+                response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                    model: this.model,
+                    messages: [
+                        {
+                            role: "system",
+                            content: systemPrompt
+                        },
+                        {
+                            role: "user",
+                            content: [
+                                {
+                                    type: "image_url",
+                                    image_url: {
+                                        url: `data:${mimeType};base64,${imageBase64}`,
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                    // response_format: { type: "json_object" }, // Removing to improve compatibility with 3rd party providers
+                    max_tokens: maxTokens,
+                    ...reasoningOptions,
+                }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+            }
+
+            logger.box('📦 Full API Response', JSON.stringify(response, null, 2));
+
+            // 检查响应是否有效
+            if (!response || !response.choices || response.choices.length === 0) {
+                logger.error({ response: JSON.stringify(response) }, 'Invalid API response - no choices array');
+                throw new Error("AI_RESPONSE_ERROR: API returned empty or invalid response");
+            }
+
+            const text = response.choices[0]?.message?.content || "";
+
+            logger.box('🤖 AI Raw Response', text);
+
+            if (!text) throw new Error("Empty response from AI");
+            const parsedResult = this.parseResponse(text);
+
+            logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
+
+            return parsedResult;
+
+        } catch (error) {
+            logger.box('❌ Error during AI analysis', {
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined
+            });
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language: 'zh' | 'en' = 'zh', difficulty: DifficultyLevel = 'medium', gradeSemester?: string | null, originalFigureSvg?: string | null): Promise<ParsedQuestion> {
+        const config = getAppConfig();
+        const systemPrompt = generateSimilarQuestionPrompt(language, originalQuestion, knowledgePoints, difficulty, {
+            customTemplate: config.prompts?.similar,
+            originalFigureSvg,
+        }, gradeSemester);
+        const userPrompt = `\nOriginal Question: "${originalQuestion}"\nKnowledge Points: ${knowledgePoints.join(", ")}\n    `;
+
+        logger.box('🎯 Generate Similar Question Request', {
+            provider: 'OpenAI',
+            endpoint: `${this.baseURL}/chat/completions`,
+            model: this.model,
+            originalQuestion: originalQuestion.substring(0, 100) + '...',
+            knowledgePoints: knowledgePoints.join(', '),
+            difficulty,
+            language
+        });
+        logger.box('📝 System Prompt', systemPrompt);
+        logger.box('📝 User Prompt', userPrompt);
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt },
+                ],
+                // response_format: { type: "json_object" }, // Removing to improve compatibility with 3rd party providers
+                max_tokens: maxTokens,
+            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || "";
+
+            logger.box('🤖 AI Raw Response', text);
+
+            if (!text) throw new Error("Empty response from AI");
+            const parsedResult = this.parseResponse(text);
+
+            logger.box('✅ Parsed & Validated Result', JSON.stringify(parsedResult, null, 2));
+
+            return normalizeGeneratedQuestion(parsedResult);
+
+        } catch (error) {
+            logger.box('❌ Error during question generation', {
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined
+            });
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async reanswerQuestion(questionText: string, language: 'zh' | 'en' = 'zh', subject?: string | null, imageBase64?: string, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ReanswerQuestionResult> {
+        const { generateReanswerPrompt } = await import('./prompts');
+        const prompt = generateReanswerPrompt(language, questionText, subject, { candidateTags }, gradeSemester);
+
+        logger.info({
+            provider: 'OpenAI',
+            endpoint: `${this.baseURL}/chat/completions`,
+            model: this.model,
+            questionLength: questionText.length,
+            subject: subject || 'auto',
+            hasImage: !!imageBase64
+        }, 'Reanswer Question Request');
+        logger.debug({ prompt }, 'Full prompt');
+
+        try {
+            // 根据是否有图片构建不同的消息内容
+            let userContent: OpenAIUserContent = "请根据上述题目提供答案和解析。";
+            if (imageBase64) {
+                // 如果有图片，构建多模态消息
+                const imageUrl = imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
+                logger.debug({ imageLength: imageUrl.length }, 'Image added to request');
+                userContent = [
+                    { type: "text", text: "请结合图片和题目描述提供答案和解析。" },
+                    { type: "image_url", image_url: { url: imageUrl } }
+                ];
+            } else {
+                logger.debug({ imageBase64Type: typeof imageBase64, hasValue: !!imageBase64 }, 'No image data');
+            }
+
+            // 打印请求参数
+            const requestParams = {
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt.substring(0, 200) + "..." },
+                    { role: "user", content: typeof userContent === 'string' ? userContent : "[包含图片的多模态消息]" }
+                ],
+                max_tokens: 8192
+            };
+            logger.debug({ requestParams }, 'Request parameters');
+
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: userContent }
+                ],
+                max_tokens: maxTokens,
+            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            logger.debug({ response: JSON.stringify(response) }, 'Full API response');
+
+            // 检查响应是否有效
+            if (!response || !response.choices || response.choices.length === 0) {
+                logger.error({ response: JSON.stringify(response) }, 'Invalid API response - no choices array');
+                throw new Error("AI_RESPONSE_ERROR: API returned empty or invalid response");
+            }
+
+            const text = response.choices[0]?.message?.content || "";
+
+            logger.debug({ rawResponse: text }, 'AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+
+            // 解析响应
+            const answerText = this.extractTag(text, "answer_text") || "";
+            const analysis = this.extractTag(text, "analysis") || "";
+            const knowledgePointsRaw = this.extractTag(text, "knowledge_points") || "";
+            const knowledgePoints = knowledgePointsRaw.split(/[,，\n]/).map(k => k.trim()).filter(k => k.length > 0);
+            const wrongAnswerText = this.extractTag(text, "wrong_answer_text") || "";
+            const mistakeAnalysis = this.extractTag(text, "mistake_analysis") || "";
+            const mistakeStatus = normalizeMistakeStatusForSave(
+                this.extractTag(text, "mistake_status"),
+                wrongAnswerText
+            );
+
+            logger.info('Reanswer parsed successfully');
+
+            return { questionKnowledgePoints: parseQuestionKnowledgePoints(this.extractTag(text, "question_knowledge_points")), answerText, analysis, knowledgePoints, wrongAnswerText, mistakeAnalysis, mistakeStatus, subject: normalizeSubject(this.extractTag(text, "subject")), difficultyStars: parseDifficultyStars(this.extractTag(text, "difficulty_stars")) };
+
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during reanswer');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async evaluateMastery(input: MasteryEvaluationInput): Promise<MasteryEvaluationResult> {
+        const prompt = generateMasteryPrompt(input);
+
+        logger.info({
+            provider: 'OpenAI',
+            historyCount: input.history.length,
+        }, 'Mastery Evaluation Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: "请根据上述练习历史给出掌握概率评估。" }
+                ],
+                max_tokens: maxTokens,
+            }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Mastery AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseMasteryEvaluation(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during mastery evaluation');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async diagnoseKnowledgeGaps(input: GapInput): Promise<GapResult> {
+        logger.info({ provider: 'OpenAI' }, '知识漏洞诊断请求');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: generateGapPrompt(input) },
+                    { role: "user", content: "请根据证据给出候选知识漏洞诊断。" }
+                ],
+                max_tokens: maxTokens,
+            }), 8192, () => logger.warn('输出被截断，增加输出上限重试'));
+
+            const text = response.choices[0]?.message?.content || '';
+
+            if (!text) throw new Error("AI 返回空内容");
+            return parseGapResult(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, '知识漏洞诊断失败');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async gradeAnswer(input: AnswerGradingInput): Promise<AnswerGradingResult> {
+        logger.info({ provider: 'OpenAI' }, 'Answer Grading Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: generateGradingPrompt(input) },
+                    { role: "user", content: "请判定学生答案是否正确。" }
+                ],
+                max_tokens: maxTokens,
+            }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Grading AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseAnswerGrading(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during answer grading');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async suggestKnowledgeTags(input: TagSuggestionInput): Promise<TagSuggestionResult> {
+        const prompt = generateTagSuggestPrompt(input);
+
+        logger.info({
+            provider: 'OpenAI',
+            subject: input.subject,
+            allowedTagCount: input.allowedTags.length,
+        }, 'Tag Suggestion Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: "请为上述题目选择知识点。" }
+                ],
+                max_tokens: maxTokens,
+            }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Tag suggestion AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseTagSuggestion(text, input.allowedTags);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during tag suggestion');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async generateFigureSvg(imageBase64: string, mimeType: string, questionText?: string | null): Promise<FigureResult> {
+        const prompt = generateFigurePrompt(questionText);
+        logger.info({ provider: 'OpenAI', model: this.model, imageSize: imageBase64.length }, 'Figure SVG Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: [{ type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }] },
+                ],
+                max_tokens: maxTokens,
+            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Figure SVG AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseFigure(this.extractTag(text, "has_figure"), this.extractTag(text, "figure_svg"));
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during figure SVG generation');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async fixLatex(input: LatexFixInput): Promise<LatexFixResult> {
+        const prompt = generateLatexFixPrompt(input);
+        logger.info({ provider: 'OpenAI', model: this.model, fields: Object.keys(input) }, 'LaTeX Fix Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: "请修复上述内容中的 LaTeX 语法。" },
+                ],
+                max_tokens: maxTokens,
+            }), 8192, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'LaTeX fix AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseLatexFix(text, input);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during LaTeX fix');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language: 'zh' | 'en' = 'zh'): Promise<string | null> {
+        const prompt = generateSvgAnimationPrompt(questionText, answerText, analysis, figureSvg, language);
+        logger.info({ provider: 'OpenAI', model: this.model, questionLength: questionText.length }, 'SVG Animation Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: SVG_ANIMATION_REQUEST[language] },
+                ],
+                max_tokens: maxTokens,
+            }), 16384, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'SVG animation AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return sanitizeSvgAnimation(this.extractTag(text, "svg_animation") || text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during SVG animation generation');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    private handleError(error: unknown) {
+        logger.error({ error }, 'OpenAI error');
+        if (error instanceof Error) {
+            if (error.message === AI_OUTPUT_TRUNCATED || error.message.startsWith('AI_RESPONSE_ERROR:')) {
+                throw error;
+            }
+            const msg = error.message.toLowerCase();
+            if (msg.includes('fetch failed') || msg.includes('network') || msg.includes('connect')) {
+                throw new Error("AI_CONNECTION_FAILED");
+            }
+            // 超时错误 (包括 408 Request Timeout)
+            if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('aborted') || msg.includes('408')) {
+                throw new Error("AI_TIMEOUT_ERROR");
+            }
+            // 配额/频率限制错误
+            if (msg.includes('quota') || msg.includes('额度') || msg.includes('rate limit') || msg.includes('429') || msg.includes('too many')) {
+                throw new Error("AI_QUOTA_EXCEEDED");
+            }
+            // 权限/403 错误
+            if (msg.includes('403') || msg.includes('forbidden') || msg.includes('permission')) {
+                throw new Error("AI_PERMISSION_DENIED");
+            }
+            // 资源不存在/404 错误
+            if (msg.includes('404') || msg.includes('not found') || msg.includes('does not exist')) {
+                throw new Error("AI_NOT_FOUND");
+            }
+            // 服务器错误 (500/502/503/504)
+            if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504') ||
+                msg.includes('无可用') || msg.includes('overloaded') || msg.includes('unavailable')) {
+                throw new Error("AI_SERVICE_UNAVAILABLE");
+            }
+            if (msg.includes('invalid json') || msg.includes('parse')) {
+                throw new Error("AI_RESPONSE_ERROR");
+            }
+            if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('401')) {
+                throw new Error("AI_AUTH_ERROR");
+            }
+        }
+        throw new Error("AI_UNKNOWN_ERROR");
+    }
+}
+

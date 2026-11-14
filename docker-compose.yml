@@ -1,0 +1,17 @@
+services:
+  cuoyin-agent-beta:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cuoyin-agent-beta:2026-11-10
+    container_name: cuoyin-agent-beta
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:39301:3000"
+    environment:
+      NEXTAUTH_SECRET: "a4a8e9efd5d20f984f62de209d1c734c9a355c44ed41f3d9498748f77edd7559"
+      AUTH_TRUST_HOST: "true"
+      PRESERVE_EXISTING_DATA: "true"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config

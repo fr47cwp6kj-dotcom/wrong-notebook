@@ -1,0 +1,287 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  educationStage String? // primary, junior_high, senior_high, university
+  enrollmentYear Int?
+
+  role      String   @default("user") // "admin" or "user"
+  isActive  Boolean  @default(true)   // 用户是否启用
+
+  confirmBeforeImport Boolean @default(false) // 导入题目前是否进入人工校对页
+  questionDuplicateThreshold Float @default(90) // 百分比，相似度严格大于此值时判重
+  enableGeogebra Boolean @default(false) // 是否显示 GeoGebra 动态演示
+  enableSvgAnimation Boolean @default(true) // 是否显示 SVG 动画讲解
+
+  errorItems ErrorItem[]
+  subjects   Subject[]
+  practiceRecords PracticeRecord[]
+  customTags KnowledgeTag[] // User's custom tags
+  examPapers ExamPaper[]
+  aiUsages   AiUsage[]
+  knowledgeUnits KnowledgeUnit[]
+}
+
+// 统一知识点标签表 (支持无限层级)
+model KnowledgeTag {
+  id        String   @id @default(cuid())
+  name      String   // 标签名，如 "勾股定理"
+  subject   String   // 学科，如 "math", "english"
+
+  // 层级控制 (邻接表模式)
+  parentId  String?
+  parent    KnowledgeTag?  @relation("TagHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children  KnowledgeTag[] @relation("TagHierarchy")
+
+  // 排序与编码
+  order     Int      @default(0) // 用于保持教材顺序
+  code      String?              // 如 "1.2.1"
+
+  // 区分系统预设 vs 用户自定义
+  isSystem  Boolean  @default(false)
+  userId    String?  // 如果是用户自定义标签，绑定 userId
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 与错题的多对多关系
+  errorItems ErrorItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 联合索引：确保同一用户（或系统）下同一父节点下的标签名不重复
+  @@unique([subject, name, userId, parentId])
+  // 索引：加速父子查询
+  @@index([parentId])
+  @@index([subject])
+}
+
+model Subject {
+  id         String  @id @default(cuid())
+  name       String
+  stage      String  @default("primary") // 学段：primary / junior_high / senior_high，仅创建时设置
+  subjectKey String? // 学科：math / english / physics 等，仅创建时设置；为空时按名称推断
+  userId     String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  errorItems ErrorItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, userId])
+}
+
+model ErrorItem {
+  id             String   @id @default(cuid())
+  shortId        String?  @unique // 6 位 base58 短 ID，创建后不变
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId      String?
+  subject        Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  originalImageUrl String
+  ocrText          String?
+  
+  // AI Analysis
+  questionText     String? // Parsed question
+  answerText       String? // AI provided answer
+  analysis         String? // AI analysis/explanation
+  wrongAnswerText  String? // Student's wrong answer/work if visible
+  mistakeAnalysis  String? // Analysis of why the wrong answer happened
+  mistakeStatus    String? // not_attempted, wrong_attempt, unknown
+  knowledgePoints  String? // [DEPRECATED] JSON string - kept for migration only
+  questionKnowledgePoints String? // 按题号保存知识点的 JSON 对象
+  geogebraCommands String? // GeoGebra commands for interactive demo (JSON or newline-separated)
+  svgAnimation     String? // AI 生成的 SVG 动画讲解（已净化），中文版
+  svgAnimationEn   String? // 英文版 SVG 动画讲解（已净化），界面为英文时使用
+
+  // New: many-to-many relation with KnowledgeTag
+  tags             KnowledgeTag[]
+  
+  // User Metadata
+  source           String? // e.g. "Midterm Exam"
+  errorType        String? // e.g. "Calculation", "Concept"
+  userNotes        String?
+  
+  masteryLevel     Int     @default(0) // 0: New, 1: Reviewing, 2: Mastered
+  gradeSemester    String? // e.g. "Junior High Grade 2, 1st Semester"
+  paperLevel       String? // e.g. "A", "B", "Other"
+  difficultyStars  Int?    // 难度星级 1~5（参考高思导引星级），未评定时为空
+  hasFigure        Boolean @default(false) // 识别时判断题目是否有配图
+  figureSvg        String? // AI 用 SVG 重绘的题目配图（已净化），显示和打印时使用
+  lastPractice     String? // 最近一次生成的举一反三题目与解答（JSON），再次进入练习页时直接显示
+
+  // 根据举一反三历史推测的掌握情况
+  masteryProbability Float?    // 0~1
+  masteryReason      String?
+  masterySource      String?   // ai | rule
+  masteryEvaluatedAt DateTime?
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  reviewSchedules ReviewSchedule[]
+  practiceRecords PracticeRecord[]
+  examQuestions   ExamQuestion[]
+  gapDiagnoses    GapDiagnosis[]
+}
+
+// 知识单元按用户、学段、学科和触发规则隔离，同一单元可关联多道题。
+model KnowledgeUnit {
+  id        String @id @default(cuid())
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stage     String
+  subject   String
+  unitKey   String
+  name      String
+  triggerRule String
+  boundary  String
+  createdAt DateTime @default(now())
+  diagnoses GapDiagnosis[]
+  @@unique([userId, stage, subject, unitKey])
+}
+
+model GapDiagnosis {
+  id        String @id @default(cuid())
+  originId  String @default(uuid())
+  errorItemId String
+  errorItem ErrorItem @relation(fields: [errorItemId], references: [id], onDelete: Cascade)
+  unitId    String
+  unit      KnowledgeUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  sourceDigest String
+  payload   String
+  source    String @default("ai")
+  status    String @default("candidate")
+  practiceReviewed Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    UnitPracticeEvent[]
+  @@unique([errorItemId, originId])
+  @@index([unitId])
+}
+
+model UnitPracticeEvent {
+  id        String @id @default(cuid())
+  requestId String
+  diagnosisId String
+  diagnosis GapDiagnosis @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+  practiceIndex Int
+  answer    String
+  result    String
+  createdAt DateTime @default(now())
+  @@unique([diagnosisId, requestId])
+}
+
+model ReviewSchedule {
+  id          String    @id @default(cuid())
+  errorItemId String
+  errorItem   ErrorItem @relation(fields: [errorItemId], references: [id], onDelete: Cascade)
+  
+  scheduledFor DateTime
+  completedAt  DateTime?
+  isCorrect    Boolean? // Result of the review
+  
+  createdAt    DateTime @default(now())
+}
+
+model PracticeRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  subject   String?  // e.g. "Math", "Physics"
+  difficulty String? // "easy", "medium", "hard", "harder"
+  isCorrect Boolean?
+
+  // 举一反三记录：关联原题，保存生成的题目与结果
+  errorItemId  String?
+  errorItem    ErrorItem? @relation(fields: [errorItemId], references: [id], onDelete: Cascade)
+  result       String?  // correct | wrong | not_attempted
+  questionText String?
+  answerText   String?
+  analysis     String?
+  wrongAnswerText String? // 本次作答快照，避免重复导入时覆盖原题
+  mistakeAnalysis String?
+  originalImageUrl String?
+  figureSvg    String?  // 举一反三新题的 SVG 配图
+  source       String   @default("practice") // practice | manual | exam | duplicate_import
+  // 试卷题目可多次录入结果，每次一条记录
+  examQuestionId String?
+  examQuestion   ExamQuestion? @relation(fields: [examQuestionId], references: [id], onDelete: SetNull)
+  
+  createdAt DateTime @default(now())
+
+  @@index([errorItemId, createdAt])
+  @@index([examQuestionId])
+}
+
+// 随机错题试卷
+model ExamPaper {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  status     String   @default("generating") // generating | ready | partial | failed
+  scope      String   // unmastered | mastered | all
+  difficulty String   // easy | medium | hard | harder
+  requestedCount Int
+  subjectIds String   // JSON 数组
+  tagNames   String?  // JSON 数组
+  resultsRecordedAt DateTime?
+
+  questions  ExamQuestion[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+model ExamQuestion {
+  id            String     @id @default(cuid())
+  paperId       String
+  paper         ExamPaper  @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  order         Int
+  errorItemId   String?
+  errorItem     ErrorItem? @relation(fields: [errorItemId], references: [id], onDelete: SetNull)
+  sourceShortId String     // 来源题目短 ID 快照，原题删除后仍保留
+  status        String     @default("pending") // pending | ready | failed
+  questionText  String?
+  answerText    String?
+  analysis      String?
+  figureSvg     String?    // 新题的 SVG 配图
+  error         String?
+  practiceRecordId String? // [DEPRECATED] 旧版一对一关联，部署校验要求保留已有列，改用 PracticeRecord.examQuestionId
+  practiceRecords PracticeRecord[]
+
+  @@index([paperId, order])
+}
+
+// 用户发起的 AI 调用记录，用于每日额度和用量统计（不含后台自动的掌握概率评估）
+model AiUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   // analyze | reanswer | practice | grade | figure | latex | geogebra | animation | exam | retag
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

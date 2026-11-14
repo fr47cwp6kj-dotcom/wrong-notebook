@@ -1,0 +1,69 @@
+import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
+import "./globals.css";
+import { Providers } from "@/components/providers";
+import { getAppTimeZone } from "@/lib/config";
+
+export const dynamic = 'force-dynamic';
+
+const geistSans = localFont({
+  src: './fonts/Geist-Variable.woff2',
+  variable: "--font-geist-sans",
+  weight: '100 900',
+  display: 'swap',
+});
+
+const geistMono = localFont({
+  src: './fonts/GeistMono-Variable.woff2',
+  variable: "--font-geist-mono",
+  weight: '100 900',
+  display: 'swap',
+});
+
+export const viewport: Viewport = {
+  themeColor: '#4f46e5',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+// 浏览器标题由各页面通过 usePageTitle 设置，这里的 <title> 只作首屏默认值；
+// 不放进 metadata，避免 Next 流式输出的 metadata 覆盖页面设置的标题
+export const metadata: Metadata = {
+  description: "基于AI的智能错题管理系统，帮助学生高效整理、分析和复习错题",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: '错因 Agent',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: '/icons/icon.png',
+    apple: '/icons/apple-touch-icon.png',
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <title>错因 Agent</title>
+      </head>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning={true}
+      >
+        <Providers timeZone={getAppTimeZone()}>
+          {children}
+        </Providers>
+      </body>
+    </html>
+  );
+}
