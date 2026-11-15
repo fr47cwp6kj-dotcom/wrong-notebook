@@ -1,16 +1,12 @@
-# Cuoyin Agent · wrong-notebook fork
+# Cuoyin Agent (Smart Wrong Notebook)
 
-Based on [margrop/wrong-notebook v2026.10.26](https://github.com/margrop/wrong-notebook/releases/tag/v2026.10.26), with the upstream MIT license and features preserved. Provenance: [UPSTREAM.json](UPSTREAM.json).
+Snap a photo of a wrong answer and the AI recognizes the question, solves it, analyzes the mistake and tags knowledge points; manage notebooks, practice with similar questions, print mistake exams, diagnose knowledge gaps and track mastery. All data stays on your own machine and you configure the AI service yourself. Two ways to use it: the **Mac desktop app** (installer from Releases) or **self-hosted web** (Docker or from source).
 
-Run `启动错因Agent.command` on macOS or `启动错因Agent.cmd` on Windows. The local app opens at http://localhost:3333. Install Node.js 22.15+, run `npm ci --registry=https://registry.npmjs.org` and `npx prisma generate` first on a new machine. Keep the terminal open while using the app. The initial account is `admin@localhost` / `123456`; the setup wizard requires a password change. Configure your own AI provider, or use manual question and diagnosis entry.
+To run from source, install Node.js 22.15+, run `npm ci --registry=https://registry.npmjs.org` and `npx prisma generate`, then `npm run dev` and open http://localhost:3000. The initial account is `admin@localhost` / `123456`; the setup wizard requires a password change. Configure your own AI provider, or use manual question and diagnosis entry. See [remote access](doc/REMOTE_ACCESS.md) for exposing the app over the Internet with a reverse proxy or tunnel.
 
-This fork adds evidence-based knowledge-gap candidates, student confirmation/rejection/uncertainty, reviewed small-step practice, and knowledge-unit tracking across questions. AI evidence must be an exact excerpt of the question or student work. Missing student work prompts for more information. Source edits make old diagnoses stale. Practice counts only after confirmation and human review; consecutive independent successes in two source questions are required for cross-question verification. New data is included in backup exports and imports.
+Core features include evidence-based knowledge-gap candidates, student confirmation/rejection/uncertainty, reviewed small-step practice, and knowledge-unit tracking across questions. AI evidence must be an exact excerpt of the question or student work. Missing student work prompts for more information. Source edits make old diagnoses stale. Practice counts only after confirmation and human review; consecutive independent successes in two source questions are required for cross-question verification. All of this data is included in backup exports and imports.
 
-For a fixed remote URL, set `CUOYIN_PUBLIC_URL` in `.env`, forward your existing tunnel service to `http://127.0.0.1:3334`, and run `启动错因Agent正式版.command`. Production reuses the current accounts, database and AI settings. Configure the provider hostname and authorization first; see [remote access](doc/REMOTE_ACCESS.md) for building, updating and stopping the service.
-
-After configuring the selected cpolar hostname `example.test` and an HTTPS certificate, run `配置cpolar账号.command` to store authorization locally, then `启动错因Agent外网.command` to start the app and tunnel together. This replaces the current GitHub Pages content on the root domain. Closing the window stops both.
-
-The original V1 is preserved in `legacy-v1/2026-10-29-v1.1.2`, with a SHA-256 manifest. This fork uses `data/cuoyin-fork.db`, separately from the official desktop app. Photos are not automatically imported. Details: [fork guide](doc/CUOYIN_FORK.md).
+The desktop app and a source checkout use separate data directories; migrate between them with backup export/import in Settings. The original V1 is preserved in `legacy-v1/2026-10-29-v1.1.2`, with a SHA-256 manifest. Details: [usage guide](doc/CUOYIN_FORK.md).
 
 Web uploads, drag and drop, and original-image replacement accept JPG, PNG, WebP, GIF, HEIC/HEIF, BMP and AVIF. You can also paste image files from the clipboard, including iPhone originals identified by their extension alone. The browser converts HEIC/HEIF to JPEG before cropping and imports only the primary image from multi-image files.
 
@@ -32,21 +28,16 @@ The original upstream README follows.
 
 [简体中文](README.md) | **English**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/margrop/wrong-notebook?include_prereleases)](https://github.com/margrop/wrong-notebook/releases) [![CI](https://github.com/margrop/wrong-notebook/actions/workflows/ci.yml/badge.svg)](https://github.com/margrop/wrong-notebook/actions/workflows/ci.yml) [![CodeQL](https://github.com/margrop/wrong-notebook/actions/workflows/codeql.yml/badge.svg)](https://github.com/margrop/wrong-notebook/actions/workflows/codeql.yml) [![npm](https://img.shields.io/npm/v/wrong-notebook)](https://www.npmjs.com/package/wrong-notebook)
-
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) 
 An AI-powered notebook for the questions you got wrong. Snap a photo or type a question, and AI recognizes it, solves it, tags it with knowledge points and rates its difficulty. Manage your notebooks, practice with similar questions, build printable exams and track how well you have mastered each question.
-
-🌐 **Project website**: <https://blog.margrop.net/wrong-notebook-github-pages/en/>
 
 🚀 **Live demo**: <https://wrong-notebook-demo.vercel.app> (account `demo@localhost`, password `demo123456`)
 
 > The demo uses a shared account and its data is visible to every visitor. Do not enter personal information.
 
-📦 **Install anywhere**: Docker image (amd64 / arm64) · npm (`npm i -g wrong-notebook`) · Windows · macOS · Linux · fnOS · Android phone / tablet (standalone with a built-in server, or a client for your server). Get the installers from [Releases](https://github.com/margrop/wrong-notebook/releases); see [Quick Start](#-quick-start) for instructions.
+📦 **Install anywhere**: Docker (build from source) · Windows · macOS · Linux · fnOS · Android phone / tablet (standalone with a built-in server, or a client for your server). Get the installers from [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases); see [Quick Start](#-quick-start) for instructions.
 
 🆓 **Works with a free MiniMax account**: choose the "MiniMax Code OAuth" channel and sign in with a MiniMax Code account in the browser to use `MiniMax-M3.1-Flash` without buying an API key. The app checks in every day to collect credits, and AI features such as recognition and explanations use the account's free credits. See [MiniMax Code OAuth](#minimax-code-oauth).
-
-> This repository is a fork of [wttwins/wrong-notebook](https://github.com/wttwins/wrong-notebook) with many additional features (listed below).
 
 > The app's built-in knowledge-point library follows the Chinese K-12 curriculum (primary, junior high and senior high school). The interface is available in Simplified Chinese and English.
 
@@ -185,7 +176,7 @@ Screen capture requires a secure browser context (HTTPS). When running in Docker
 The app is a PWA: add it to your phone's or tablet's home screen to run it full screen and open it with one tap. Tablets can use it in landscape.
 
 - **iPhone / iPad (Safari)**: tap **Share** at the bottom → **Add to Home Screen**.
-- **Android (Chrome)**: tap the **menu** at the top right → **Add to Home screen** or **Install app**. You can also install the Android app from [Releases](https://github.com/margrop/wrong-notebook/releases) (see Installers below).
+- **Android (Chrome)**: tap the **menu** at the top right → **Add to Home screen** or **Install app**. You can also install the Android app from [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) (see Installers below).
 
 When served over HTTPS (or `localhost`), a service worker caches scripts, styles and icons so the app opens faster, and shows an offline page when the network is down. Questions, statistics and other data always come from the server and are not cached offline.
 
@@ -208,7 +199,7 @@ When served over HTTPS (or `localhost`), a service worker caches scripts, styles
 2. **Clone and install dependencies**:
 
    ```bash
-   git clone https://github.com/margrop/wrong-notebook.git
+   git clone https://github.com/fr47cwp6kj-dotcom/wrong-notebook.git
    cd wrong-notebook
    npm ci
    ```
@@ -239,7 +230,7 @@ AI API keys can also be set in the web settings after signing in; see the AI mod
 
 ### Option 2: Docker image (recommended)
 
-Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/wrong-notebook`, for `linux/amd64` and `linux/arm64`. Pull it directly; no source code needed.
+Every release publishes an image to GitHub Container Registry, `ghcr.io（如自行发布镜像可替换）`, for `linux/amd64` and `linux/arm64`. Pull it directly; no source code needed.
 
 | Image tag | Description |
 | --- | --- |
@@ -247,7 +238,7 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/
 | `2026.10` | Latest release of the month |
 | `latest` | Latest stable release |
 
-See [Releases](https://github.com/margrop/wrong-notebook/releases) for available versions.
+See [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) for available versions.
 
 1. **Prepare directories and a secret**:
 
@@ -269,7 +260,7 @@ See [Releases](https://github.com/margrop/wrong-notebook/releases) for available
      -p 3000:3000 \
      -v "$(pwd)/data:/app/data" \
      -v "$(pwd)/config:/app/config" \
-     ghcr.io/margrop/wrong-notebook:latest
+     ghcr.io（如自行发布镜像可替换）:latest
    ```
 
    With Docker Compose: download [`docker-compose.yml`](docker-compose.yml) into the current directory, set `NEXTAUTH_SECRET` (and `NEXTAUTH_URL`), then run:
@@ -291,7 +282,7 @@ See [Releases](https://github.com/margrop/wrong-notebook/releases) for available
 
 Data lives in the mounted `data/` (SQLite database) and `config/` (AI settings saved from the web UI, etc.) directories. **Settings → About** and `/api/health` show the running version. For HTTPS, see the [HTTPS setup guide](doc/HTTPS_SETUP.md) and `docker-compose.https.yml`.
 
-> The upstream image `ghcr.io/wttwins/wrong-notebook` **does not include** the features added in this repository. Use `ghcr.io/margrop/wrong-notebook`.
+No public Docker image is published; build your own with `docker build -t wrong-notebook .` from the source.
 
 ### Option 3: Build the image from source
 
@@ -312,7 +303,7 @@ With `docker-compose.yml`, change `image` to `wrong-notebook:local`.
 
 ### Option 4: Installers (npm / Windows / macOS / Linux / fnOS / Android)
 
-If you prefer not to use Docker, download the desktop app or the fnOS package from [Releases](https://github.com/margrop/wrong-notebook/releases), or install with npm:
+If you prefer not to use Docker, download the desktop app or the fnOS package from [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases), or install with npm:
 
 ```bash
 npm install -g wrong-notebook
