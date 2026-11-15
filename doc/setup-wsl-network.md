@@ -12,13 +12,13 @@ WSL 的 IP 地址（172.30.x.x）是虚拟网络 IP，局域网内其他设备�
 ```powershell
 ipconfig
 ```
-找到 "无线局域网适配器 WLAN" 或 "以太网适配器" 的 IPv4 地址，例如：`192.168.1.100`
+找到 "无线局域网适配器 WLAN" 或 "以太网适配器" 的 IPv4 地址，例如 `您的 Windows IPv4 地址`
 
 #### 2. 配置端口转发
 在 **Windows PowerShell（管理员权限）** 中运行：
 ```powershell
 # 添加端口转发规则
-netsh interface portproxy add v4tov4 listenport=3000 listenaddress=0.0.0.0 connectport=3000 connectaddress=172.30.108.211
+netsh interface portproxy add v4tov4 listenport=3000 listenaddress=0.0.0.0 connectport=3000 connectaddress=WSL的IP地址
 
 # 查看转发规则
 netsh interface portproxy show all
@@ -29,7 +29,7 @@ New-NetFirewallRule -DisplayName "WSL Dev Server" -Direction Inbound -LocalPort 
 
 #### 3. 访问测试
 - **本机访问：** `http://localhost:3000`
-- **局域网访问：** `http://192.168.1.100:3000` （使用您的 Windows IP）
+- **局域网访问：** `http://您的Windows主机地址:3000` （使用您的 Windows IP）
 
 #### 4. 删除转发规则（如果不需要了）
 ```powershell

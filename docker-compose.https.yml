@@ -37,7 +37,7 @@ services:
       # 启用内置 HTTPS
       - HTTPS_ENABLED=true
       # 证书域名/IP（自动生成证书时使用）
-      # 设置为你的 IP 或域名，如：192.168.1.100 或 notebook.example.com
+      # 设置为你的 IP 或域名，如： notebook.example.com
       - CERT_DOMAIN=YOUR_IP_OR_DOMAIN
       
     volumes:
