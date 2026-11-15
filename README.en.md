@@ -14,7 +14,7 @@ The default image recognition prompt redraws figures as compact SVG diagrams tha
 
 The review page groups recognized question numbers and offers Question / Answer / Explanation / Mistakes tabs. It opens in rendered preview mode, with long content collapsed and images and knowledge points available on demand. Select Source or double-click a preview to edit the current question. Content that cannot be matched to a question remains accessible under Full text. Grouping preserves the original text; saving includes the entire recognition result. To save separate notebook entries, select multiple question regions during upload.
 
-All math notebooks in this fork now use a **Zhejiang edition, Grade 8, first-semester** candidate list with prerequisite skills. It does not reuse the original People’s Education Press semester ordering. Geometric shortest paths have a specific application tag; uncertain tags can remain empty. Expand Knowledge points on the review page to edit up to five tags per question; mappings are saved and backed up. Existing records change only when re-tagged. See [scope and limitations](doc/MATH_CURRICULUM.md).
+All math notebooks use a **Zhejiang edition, Grade 8, first-semester** candidate list with prerequisite skills. It does not reuse the original People’s Education Press semester ordering. Geometric shortest paths have a specific application tag; uncertain tags can remain empty. Expand Knowledge points on the review page to edit up to five tags per question; mappings are saved and backed up. Existing records change only when re-tagged. See [scope and limitations](doc/MATH_CURRICULUM.md).
 
 ---
 
@@ -485,7 +485,7 @@ After changing `prisma/schema.prisma`, create a migration with `npx prisma migra
 
 ## 📚 Documentation
 
-For usage, deployment and FAQ, see the [Wiki in English](https://github.com/margrop/wrong-notebook/wiki/Home-en) (also available in [Chinese](https://github.com/margrop/wrong-notebook/wiki)). The topic documents below are mostly written in Simplified Chinese.
+The topic documents below are mostly written in Simplified Chinese.
 
 | Document | Content |
 | :--- | :--- |
@@ -517,4 +517,4 @@ Issues and pull requests are welcome. Please read the [contributing guide](CONTR
 
 [MIT License](LICENSE)
 
-© 2026 margrop. This project extends [wttwins/wrong-notebook](https://github.com/wttwins/wrong-notebook); copyright in the original code remains with its author.
+© 2026. Released under the MIT license; see [LICENSE](LICENSE).
