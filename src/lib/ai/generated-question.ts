@@ -11,7 +11,8 @@ export function normalizeGeneratedQuestion(question: ParsedQuestion): ParsedQues
     const hasOptionLine = /^\s*(?:[-*]\s*)?(?:[A-DＡ-Ｄ][.．、:：)）]|[（(][A-DＡ-Ｄ][）)])\s*\S/imu.test(questionText);
     const inlineOptions = questionText.match(/(?:^|\s)(?:[A-DＡ-Ｄ][.．、:：)）]|[（(][A-DＡ-Ｄ][）)])/giu) || [];
     const circledOptions = questionText.match(/[①②③④⑤⑥⑦⑧⑨⑩]/gu) || [];
-    if (!questionText || hasOptionLine || inlineOptions.length >= 2 || circledOptions.length >= 2) {
+    if (!questionText || !question.answerText?.trim() || !question.analysis?.trim()
+        || hasOptionLine || inlineOptions.length >= 2 || circledOptions.length >= 2) {
         throw new Error('AI_RESPONSE_ERROR: 生成题目必须为不含选项的填空题或解答题');
     }
 

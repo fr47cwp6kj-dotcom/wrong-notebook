@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Clapperboard, FileQuestion, RefreshCw, Trash2 } from "lucide-react";
 import { DifficultyStars } from "@/components/difficulty-stars";
-import { ImageViewer } from "@/components/error-detail/image-viewer";
+import { ImageViewer } from "@/components/image-viewer";
 import { MarkdownFieldCard } from "@/components/error-detail/markdown-field-card";
 import { NotesCard } from "@/components/error-detail/notes-card";
 import { QuestionCard } from "@/components/error-detail/question-card";
@@ -109,8 +109,10 @@ export default function ErrorDetailPage() {
     };
 
     // 动画按语言分别保存，生成或删除只影响对应语言的版本
-    const handleSvgAnimationChange = useCallback((animationLanguage: 'zh' | 'en', svgAnimation: string | null) => {
-        updateItem({ [animationLanguage === 'en' ? 'svgAnimationEn' : 'svgAnimation']: svgAnimation });
+    const handleSvgAnimationChange = useCallback((animationLanguage: 'zh' | 'en', svgAnimation: string | null, stepsJson?: string | null) => {
+        updateItem(animationLanguage === 'en'
+            ? { svgAnimationEn: svgAnimation, svgAnimationStepsEn: stepsJson ?? null }
+            : { svgAnimation: svgAnimation, svgAnimationSteps: stepsJson ?? null });
     }, [updateItem]);
 
     const deleteItem = async () => {
@@ -197,7 +199,7 @@ export default function ErrorDetailPage() {
                             </div>
                         )}
                     </MarkdownFieldCard>
-                    <WrongAnswerCard item={item} saveFields={saveFields} onEnlarge={setViewerImageUrl} />
+                    <WrongAnswerCard item={item} saveFields={saveFields} onUpdate={updateItem} onEnlarge={setViewerImageUrl} />
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -227,6 +229,7 @@ export default function ErrorDetailPage() {
                                 key={`${item.id}:${language}`}
                                 errorItemId={item.id}
                                 svgAnimation={language === 'en' ? item.svgAnimationEn : item.svgAnimation}
+                                svgAnimationSteps={language === 'en' ? item.svgAnimationStepsEn : item.svgAnimationSteps}
                                 hasOtherLanguage={!!(language === 'en' ? item.svgAnimation : item.svgAnimationEn)}
                                 onChange={handleSvgAnimationChange}
                             />

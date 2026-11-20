@@ -37,6 +37,8 @@ model User {
   examPapers ExamPaper[]
   aiUsages   AiUsage[]
   knowledgeUnits KnowledgeUnit[]
+  learningEvents LearningEvent[]
+  paperImages PaperImage[]
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -98,6 +100,11 @@ model ErrorItem {
   
   originalImageUrl String
   ocrText          String?
+  // 整张试卷原图（同一份试卷的错题共享同一条 PaperImage 记录）
+  paperImageId     String?
+  paperImage       PaperImage? @relation(fields: [paperImageId], references: [id], onDelete: SetNull)
+  // 学生作答区域的照片（拍照识别错答时保存）
+  wrongAnswerImageUrl String?
   
   // AI Analysis
   questionText     String? // Parsed question
@@ -111,6 +118,9 @@ model ErrorItem {
   geogebraCommands String? // GeoGebra commands for interactive demo (JSON or newline-separated)
   svgAnimation     String? // AI 生成的 SVG 动画讲解（已净化），中文版
   svgAnimationEn   String? // 英文版 SVG 动画讲解（已净化），界面为英文时使用
+  // 动画分步时间轴（JSON [{index,title,begin}]），供播放器分步点击；为空时播放器不显示步骤条
+  svgAnimationSteps   String?
+  svgAnimationStepsEn String?
 
   // New: many-to-many relation with KnowledgeTag
   tags             KnowledgeTag[]
@@ -143,6 +153,20 @@ model ErrorItem {
   gapDiagnoses    GapDiagnosis[]
 }
 
+// 整张试卷的原图：按内容哈希在用户内去重，同一张试卷的多道错题共享一条记录
+model PaperImage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 图片 data URL 的 SHA-256，用于去重
+  hash      String
+  dataUrl   String
+  createdAt DateTime @default(now())
+  errorItems ErrorItem[]
+
+  @@unique([userId, hash])
+}
+
 // 知识单元按用户、学段、学科和触发规则隔离，同一单元可关联多道题。
 model KnowledgeUnit {
   id        String @id @default(cuid())
@@ -156,7 +180,31 @@ model KnowledgeUnit {
   boundary  String
   createdAt DateTime @default(now())
   diagnoses GapDiagnosis[]
+  learningEvents LearningEvent[]
   @@unique([userId, stage, subject, unitKey])
+}
+
+// 所有练习入口共享的可追溯学习证据；旧记录不臆测补写。
+model LearningEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unitId      String
+  unit        KnowledgeUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  requestId   String
+  kind        String   // answer | hint | reveal | diagnostic_reply | review | warning
+  source      String   // student | ai | system
+  errorItemId String?
+  questionKey String?
+  result      String?
+  independent Boolean  @default(false)
+  hintLevel   Int      @default(0)
+  payload     String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, requestId])
+  @@index([unitId, createdAt])
+  @@index([userId, kind, createdAt])
 }
 
 model GapDiagnosis {
@@ -186,6 +234,7 @@ model UnitPracticeEvent {
   practiceIndex Int
   answer    String
   result    String
+  independent Boolean @default(false) // 是否在查看答案前提交作答；旧记录默认不视为独立证据
   createdAt DateTime @default(now())
   @@unique([diagnosisId, requestId])
 }
@@ -215,6 +264,8 @@ model PracticeRecord {
   errorItemId  String?
   errorItem    ErrorItem? @relation(fields: [errorItemId], references: [id], onDelete: Cascade)
   result       String?  // correct | wrong | not_attempted
+  hintUsed     Boolean  @default(false) // 本次作答前是否查看了提示或解答；用提示后答对不算独立通过
+  hintLevel    Int      @default(0) // 本次练习最高查看的提示级别，0 表示未查看分级提示
   questionText String?
   answerText   String?
   analysis     String?

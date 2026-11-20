@@ -10,7 +10,7 @@ WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json ./
-RUN npm ci --registry=https://registry.npmjs.org
+RUN npm ci
 
 # CI uses the same Node version and native dependencies as production builds.
 FROM deps AS ci
@@ -24,7 +24,7 @@ RUN npx prisma generate \
     && bash -n scripts/ci.sh scripts/build-image.sh
 
 # Rebuild the source code only after the checks pass.
-FROM deps AS builder
+FROM ci AS builder
 
 # Generate Prisma Client and Seed Database
 # We temporarily set DATABASE_URL to a local file for the build process to generate the file

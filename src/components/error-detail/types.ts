@@ -19,6 +19,7 @@ export interface ErrorItemDetail {
     tags: KnowledgeTag[]; // 新的标签关联
     masteryLevel: number;
     originalImageUrl: string;
+    paperImageUrl?: string | null;
     referenceImageUrl?: string | null;
     wrongAnswerImageUrl?: string | null;
     userNotes: string | null;
@@ -35,6 +36,8 @@ export interface ErrorItemDetail {
     geogebraCommands?: string | null;
     svgAnimation?: string | null;    // 中文版动画讲解
     svgAnimationEn?: string | null;  // 英文版动画讲解
+    svgAnimationSteps?: string | null;   // 中文版动画分步时间轴（JSON）
+    svgAnimationStepsEn?: string | null; // 英文版动画分步时间轴（JSON）
 }
 
 /** 局部更新错题，同时合并到页面状态 */

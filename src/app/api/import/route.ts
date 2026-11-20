@@ -10,6 +10,7 @@ import type { BackgroundTaskHandle } from "@/lib/background-tasks";
 import { generateUniqueShortId, isShortId } from "@/lib/short-id";
 import { isPracticeResult, scheduleMasteryEvaluation } from "@/lib/mastery";
 import { findDuplicateQuestion, recordDuplicateQuestion } from "@/lib/question-deduplication";
+import { findOrCreatePaperImage } from "@/lib/paper-image";
 import { parseDifficultyStars } from "@/lib/ai/schema";
 import { resolveNotebookScope } from "@/lib/notebook-scope";
 import { QuestionKnowledgePointsSchema } from "@/lib/ai/schema";
@@ -69,6 +70,7 @@ interface ImportData {
         subjectId: string | null;
         originalImageUrl: string;
         ocrText: string | null;
+        paperImageId?: string | null; // 整卷原图引用，对应 paperImages[].id
         questionText: string | null;
         answerText: string | null;
         analysis: string | null;
@@ -99,6 +101,13 @@ interface ImportData {
         updatedAt: string;
         tags: Array<{ id: string; name: string; subject: string }>;
     }>;
+    paperImages?: Array<{ // 整卷原图，按内容哈希在目标用户内去重恢复
+        id: string;
+        userId: string;
+        hash: string;
+        dataUrl: string;
+        createdAt?: string;
+    }>;
     reviewSchedules: Array<{
         id: string;
         errorItemId: string;
@@ -111,6 +120,8 @@ interface ImportData {
         id: string;
         userId: string;
         subject: string | null;
+        hintUsed?: boolean;
+        hintLevel?: number;
         difficulty: string | null;
         isCorrect: boolean | null;
         errorItemId?: string | null;
@@ -125,6 +136,20 @@ interface ImportData {
         source?: string;
         examQuestionId?: string | null;
         createdAt: string;
+    }>;
+    learningEvents?: Array<{
+        userId: string;
+        requestId: string;
+        kind: string;
+        source: string;
+        errorItemId?: string | null;
+        questionKey?: string | null;
+        result?: string | null;
+        independent?: boolean;
+        hintLevel?: number;
+        payload?: string;
+        createdAt: string;
+        unit: { stage: string; subject: string; unitKey: string };
     }>;
     examPapers?: Array<{ // version 2 起导出
         id: string;
@@ -267,6 +292,7 @@ export async function POST(req: Request) {
             examPapersCreated: 0,
             preferencesRestored: false,
             practiceRecordsCreated: 0,
+            learningEventsCreated: 0,
             tagsLinked: 0,
             duplicateErrorItems: 0,
         };
@@ -373,14 +399,31 @@ export async function POST(req: Request) {
             // 4. 导入 error items
             const errorItemIdMap = new Map<string, string>();
             const errorItemOwnerMap = new Map<string, string>();
+            // 整卷原图先恢复（按哈希在目标用户内去重），错题通过映射后的新 ID 关联
+            const paperImageIdMap = new Map<string, string>();
+            for (const paperImage of (body.paperImages || [])) {
+                if (typeof paperImage.dataUrl !== 'string' || !paperImage.dataUrl) continue;
+                const targetUserId = importAll ? paperImage.userId : user.id;
+                try {
+                    const saved = await findOrCreatePaperImage(tx, targetUserId, paperImage.dataUrl);
+                    paperImageIdMap.set(paperImage.id, saved.id);
+                } catch (paperError) {
+                    logger.warn({ error: paperError }, 'Skip invalid paper image on import');
+                }
+            }
             for (const item of body.errorItems) {
                 const targetUserId = importAll ? item.userId : user.id;
                 errorItemOwnerMap.set(item.id, targetUserId);
                 const newSubjectId = item.subjectId ? subjectIdMap.get(item.subjectId) : undefined;
+                const newPaperImageId = item.paperImageId ? paperImageIdMap.get(item.paperImageId) : undefined;
 
                 const duplicate = await findDuplicateQuestion(tx, targetUserId, item);
                 if (duplicate) {
                     const existing = await recordDuplicateQuestion(tx, targetUserId, duplicate, item);
+                    // 原题缺少整卷图时补挂本次导入的整卷图
+                    if (newPaperImageId && !existing.paperImageId) {
+                        await tx.errorItem.update({ where: { id: existing.id }, data: { paperImageId: newPaperImageId } });
+                    }
                     // 后续复习计划和练习历史映射到原题，保留本次导入的错误快照。
                     errorItemIdMap.set(item.id, existing.id);
                     masteryIds.add(existing.id);
@@ -401,6 +444,7 @@ export async function POST(req: Request) {
                         userId: targetUserId,
                         subjectId: newSubjectId || undefined,
                         originalImageUrl: item.originalImageUrl || '',
+                        paperImageId: newPaperImageId,
                         ocrText: item.ocrText,
                         questionText: item.questionText,
                         answerText: item.answerText,
@@ -575,6 +619,8 @@ export async function POST(req: Request) {
                         ...(errorItemId ? {
                             errorItemId,
                             result,
+                            hintUsed: record.hintUsed === true || (Number.isInteger(record.hintLevel) && (record.hintLevel ?? 0) > 0),
+                            hintLevel: Number.isInteger(record.hintLevel) && (record.hintLevel ?? 0) >= 0 && (record.hintLevel ?? 0) <= 3 ? record.hintLevel : 0,
                             questionText: record.questionText,
                             answerText: record.answerText,
                             analysis: record.analysis,
@@ -590,6 +636,29 @@ export async function POST(req: Request) {
                 });
                 stats.practiceRecordsCreated++;
                 if (errorItemId && result && !evaluatedIds.has(errorItemId)) masteryIds.add(errorItemId);
+            }
+            // 只恢复能映射到目标用户知识单元及原题的事件；旧备份无此字段时保持未知。
+            for (const event of (body.learningEvents || [])) {
+                const targetUserId = importAll ? event.userId : user.id;
+                if (!event.unit || !['student', 'ai', 'system'].includes(event.source)
+                    || !['answer', 'hint', 'reveal', 'diagnostic_reply', 'review', 'warning'].includes(event.kind)
+                    || typeof event.requestId !== 'string' || event.requestId.length > 200
+                    || typeof event.payload !== 'string' || event.payload.length > 10000) continue;
+                const unit = await tx.knowledgeUnit.findFirst({ where: { userId: targetUserId, ...event.unit }, select: { id: true } });
+                if (!unit) continue;
+                const errorItemId = event.errorItemId && errorItemOwnerMap.get(event.errorItemId) === targetUserId
+                    ? errorItemIdMap.get(event.errorItemId) : null;
+                if (event.errorItemId && !errorItemId) continue;
+                const existing = await tx.learningEvent.findUnique({ where: { userId_requestId: { userId: targetUserId, requestId: event.requestId } } });
+                if (existing) continue;
+                await tx.learningEvent.create({ data: {
+                    userId: targetUserId, unitId: unit.id, requestId: event.requestId, kind: event.kind,
+                    source: event.source, errorItemId, questionKey: event.questionKey || null,
+                    result: event.result || null, independent: event.independent === true,
+                    hintLevel: Number.isInteger(event.hintLevel) && (event.hintLevel ?? 0) >= 0 && (event.hintLevel ?? 0) <= 3 ? event.hintLevel : 0,
+                    payload: event.payload, createdAt: safeParseDate(event.createdAt) ?? new Date(),
+                } });
+                stats.learningEventsCreated++;
             }
         }, {
             timeout: 60000,

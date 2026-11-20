@@ -50,12 +50,16 @@
             document.getElementById('message').textContent = 'Check your network connection or make sure the Wrong Notebook server is running, then try again.';
             document.getElementById('retry').textContent = 'Retry';
         }
-        document.getElementById('retry').addEventListener('click', function () {
+        var lastReloadAt = 0;
+        function guardedReload() {
+            var now = Date.now();
+            // 冷却 5 秒，避免连接抖动时 offline 页与 online 事件形成无限刷新循环
+            if (now - lastReloadAt < 5000) return;
+            lastReloadAt = now;
             location.reload();
-        });
-        window.addEventListener('online', function () {
-            location.reload();
-        });
+        }
+        document.getElementById('retry').addEventListener('click', guardedReload);
+        window.addEventListener('online', guardedReload);
     </script>
 </body>
 </html>

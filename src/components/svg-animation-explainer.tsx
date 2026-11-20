@@ -14,12 +14,12 @@ import type { Language } from "@/lib/translations";
 const GENERATE_TIMEOUT_MS = 10 * 60 * 1000;
 
 // 合并同一页面中尚未结束的自动请求，避免重复挂载重复消耗 AI。
-const pendingAnimations = new Map<string, Promise<{ svgAnimation: string }>>();
+const pendingAnimations = new Map<string, Promise<{ svgAnimation: string; svgAnimationSteps?: string | null }>>();
 function requestAnimation(errorItemId: string, language: Language, reuseExisting: boolean) {
     const key = `${errorItemId}:${language}`;
     const pending = pendingAnimations.get(key);
     if (pending) return pending;
-    const request = apiClient.post<{ svgAnimation: string }>(
+    const request = apiClient.post<{ svgAnimation: string; svgAnimationSteps?: string | null }>(
         `/api/error-items/${errorItemId}/svg-animation`,
         { language, ...(reuseExisting ? { reuseExisting: true } : {}) },
         { timeout: GENERATE_TIMEOUT_MS },
@@ -34,17 +34,19 @@ interface SvgAnimationExplainerProps {
     autoGenerate?: boolean;
     /** 当前界面语言对应的动画 */
     svgAnimation: string | null | undefined;
+    /** 当前界面语言对应的分步时间轴（JSON，旧动画可能没有） */
+    svgAnimationSteps?: string | null;
     /** 另一语言是否已有动画（当前语言未生成时提示切换语言查看） */
     hasOtherLanguage?: boolean;
-    /** 生成或删除后回调该语言的新动画（删除后为 null） */
-    onChange: (language: Language, svgAnimation: string | null) => void;
+    /** 生成或删除后回调该语言的新动画与分步时间轴（删除后为 null） */
+    onChange: (language: Language, svgAnimation: string | null, stepsJson?: string | null) => void;
 }
 
 /**
  * 题目的 SVG 动画讲解，按界面语言分别生成和显示：中文界面用中文版动画，英文界面用英文版动画。
- * 未生成时显示生成入口；已生成时可播放/暂停、拖动进度、重新生成和删除（删除需二次确认，只删除当前语言的动画）。
+ * 未生成时显示生成入口；已生成时可播放/暂停、拖动进度、分步点击、重新生成和删除（删除需二次确认，只删除当前语言的动画）。
  */
-export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLanguage, onChange, autoGenerate = true }: SvgAnimationExplainerProps) {
+export function SvgAnimationExplainer({ errorItemId, svgAnimation, svgAnimationSteps, hasOtherLanguage, onChange, autoGenerate = true }: SvgAnimationExplainerProps) {
     const { t, language } = useLanguage();
     const attempted = useRef(false);
     const mounted = useRef(true);
@@ -62,7 +64,7 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLangu
         setError(null);
         try {
             const result = await requestAnimation(errorItemId, language, reuseExisting);
-            if (mounted.current) onChange(language, result.svgAnimation);
+            if (mounted.current) onChange(language, result.svgAnimation, result.svgAnimationSteps ?? null);
         } catch (err) {
             const code = (err as { data?: { message?: string } })?.data?.message || "";
             const mapped = (t.errors as Record<string, unknown>)[code];
@@ -88,7 +90,7 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLangu
         setDeleting(true);
         try {
             await apiClient.delete(`/api/error-items/${errorItemId}/svg-animation?language=${language}`);
-            onChange(language, null);
+            onChange(language, null, null);
             setError(null);
         } catch (err) {
             frontendLogger.error('[SvgAnimation]', 'Failed to delete SVG animation', { error: err instanceof Error ? err.message : String(err) });
@@ -139,7 +141,7 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, hasOtherLangu
             </div>
             {error && <p className="px-3 pt-2 text-xs text-destructive">{error}</p>}
             <div className="p-2 sm:p-3">
-                <SvgAnimationPlayer svg={svgAnimation} />
+                <SvgAnimationPlayer svg={svgAnimation} stepsJson={svgAnimationSteps} />
                 <p className="mx-auto mt-2 max-w-3xl text-sm text-muted-foreground">{t.svgAnimation.controlsHint}</p>
             </div>
         </div>

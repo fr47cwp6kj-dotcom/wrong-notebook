@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { GapCandidateSchema, GAP_STATUSES } from './knowledge-gaps';
 import { gapUnitKey } from './knowledge-gap-store';
 
-const eventSchema = z.object({ requestId: z.string().uuid(), practiceIndex: z.number().int().min(0).max(2), answer: z.string().trim().min(1).max(4000), result: z.enum(['correct', 'partial', 'incorrect']), createdAt: z.coerce.date() });
+const eventSchema = z.object({ requestId: z.string().uuid(), practiceIndex: z.number().int().min(0).max(2), answer: z.string().trim().min(1).max(4000), result: z.enum(['correct', 'partial', 'incorrect']), independent: z.boolean().default(false), createdAt: z.coerce.date() });
 const backupSchema = z.array(z.object({
     originId: z.string().uuid(), payload: z.string().max(60000), sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
     source: z.enum(['ai', 'manual']), status: z.enum(GAP_STATUSES), practiceReviewed: z.boolean(),

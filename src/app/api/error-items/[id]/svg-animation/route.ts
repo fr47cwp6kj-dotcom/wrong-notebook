@@ -24,11 +24,16 @@ function animationField(language: AnimationLanguage) {
     return language === 'en' ? 'svgAnimationEn' : 'svgAnimation';
 }
 
+/** 分步时间轴与动画同样按语言分别保存 */
+function stepsField(language: AnimationLanguage) {
+    return language === 'en' ? 'svgAnimationStepsEn' : 'svgAnimationSteps';
+}
+
 /** 当前用户拥有的错题；不存在或不属于该用户时返回 null */
 async function findOwnedItem(id: string, userId: string) {
     const item = await prisma.errorItem.findUnique({
         where: { id },
-        select: { userId: true, shortId: true, questionText: true, answerText: true, analysis: true, figureSvg: true, svgAnimation: true, svgAnimationEn: true },
+        select: { userId: true, shortId: true, questionText: true, answerText: true, analysis: true, figureSvg: true, svgAnimation: true, svgAnimationEn: true, svgAnimationSteps: true, svgAnimationStepsEn: true },
     });
     return item && item.userId === userId ? item : null;
 }
@@ -59,7 +64,7 @@ export async function POST(req: Request, { params }: RouteContext) {
 
         if (body.reuseExisting === true) {
             const saved = item[animationField(language)];
-            if (saved) return NextResponse.json({ svgAnimation: saved, language });
+            if (saved) return NextResponse.json({ svgAnimation: saved, svgAnimationSteps: item[stepsField(language)], language });
         }
         const key = `${user.id}:${id}:${language}`;
         const pending = pendingAnimations.get(key);
@@ -74,10 +79,11 @@ export async function POST(req: Request, { params }: RouteContext) {
             const svgAnimation = await trackBackgroundTask(
                 { userId: user.id, kind: 'svg_animation', subject: describeQuestion(item), link: `/error-items/${id}` },
                 async () => {
-                    const svg = await getAIService().generateSvgAnimation(questionText, item.answerText || "", item.analysis || "", item.figureSvg, language);
-                    if (!svg) throw new Error("NO_VALID_ANIMATION");
-                    await prisma.errorItem.update({ where: { id }, data: { [animationField(language)]: svg } });
-                    return svg;
+                    const result = await getAIService().generateSvgAnimation(questionText, item.answerText || "", item.analysis || "", item.figureSvg, language);
+                    if (!result) throw new Error("NO_VALID_ANIMATION");
+                    const stepsJson = result.steps.length > 0 ? JSON.stringify(result.steps) : null;
+                    await prisma.errorItem.update({ where: { id }, data: { [animationField(language)]: result.svg, [stepsField(language)]: stepsJson } });
+                    return { svg: result.svg, stepsJson };
                 }
             ).catch((error: unknown) => {
                 if (error instanceof Error && error.message === "NO_VALID_ANIMATION") return null;
@@ -87,8 +93,8 @@ export async function POST(req: Request, { params }: RouteContext) {
                 return badRequest("NO_VALID_ANIMATION");
             }
 
-            logger.info({ errorItemId: id, language, svgLength: svgAnimation.length }, 'SVG animation generated');
-            return NextResponse.json({ svgAnimation, language });
+            logger.info({ errorItemId: id, language, svgLength: svgAnimation.svg.length, stepsCount: svgAnimation.stepsJson ? JSON.parse(svgAnimation.stepsJson).length : 0 }, 'SVG animation generated');
+            return NextResponse.json({ svgAnimation: svgAnimation.svg, svgAnimationSteps: svgAnimation.stepsJson, language });
         })();
         pendingAnimations.set(key, request);
         try {
@@ -122,7 +128,7 @@ export async function DELETE(req: Request, { params }: RouteContext) {
             return notFound("Item not found");
         }
 
-        await prisma.errorItem.update({ where: { id }, data: { [animationField(language)]: null } });
+        await prisma.errorItem.update({ where: { id }, data: { [animationField(language)]: null, [stepsField(language)]: null } });
         logger.info({ errorItemId: id, language }, 'SVG animation deleted');
         return NextResponse.json({ success: true });
     } catch (error) {

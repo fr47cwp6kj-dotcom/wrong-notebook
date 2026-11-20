@@ -23,6 +23,7 @@ export function PracticeRecordForm({ errorItemId, onSaved, onCancel }: PracticeR
     const { timeZone } = useTimeZone();
     const today = formatDateTime(new Date(), "yyyy-MM-dd", timeZone);
     const [result, setResult] = useState<PracticeResult | null>(null);
+    const [hintUsed, setHintUsed] = useState(false);
     const [date, setDate] = useState(today);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -36,6 +37,7 @@ export function PracticeRecordForm({ errorItemId, onSaved, onCancel }: PracticeR
                 errorItemId,
                 result,
                 source: "manual",
+                hintUsed,
                 takenAt: answeredDateToISOString(date, timeZone),
             });
             onSaved();
@@ -49,6 +51,10 @@ export function PracticeRecordForm({ errorItemId, onSaved, onCancel }: PracticeR
     return (
         <div className="space-y-3 rounded-md border bg-muted/30 p-3">
             <PracticeResultPicker value={result} onChange={setResult} disabled={saving} />
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input type="checkbox" checked={hintUsed} onChange={e => setHintUsed(e.target.checked)} disabled={saving} />
+                {t.mastery.hintUsedLabel}
+            </label>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <label htmlFor={`practice-date-${errorItemId}`} className="text-sm font-medium">{t.mastery.recordDate}</label>
                 <Input

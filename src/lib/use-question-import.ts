@@ -67,6 +67,9 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
     // 批量导入结果与框选的题目图片
     const [lastImported, setLastImported] = useState<ImportedQuestion | null>(null);
     const [batchBlobs, setBatchBlobs] = useState<Blob[] | null>(null);
+    // 裁剪前的整卷图：入库时随错题一并保存，详情页可随时回看
+    const paperFileRef = useRef<File | null>(null);
+    const [paperImage, setPaperImage] = useState<string | null>(null);
 
     const aiTimeout = config?.timeouts?.analyze || DEFAULT_AI_TIMEOUT;
     const safetyTimeout = aiTimeout + 10000;
@@ -101,10 +104,12 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
         setLastImported(null);
         setIsCropperOpen(false);
         setCroppingImage(null);
+        setPaperImage(null);
         setIsPreparingImage(true);
         try {
             const prepared = await prepareImageFile(file);
             if (selection !== imageSelection.current) return;
+            paperFileRef.current = prepared;
             setCroppingImage(URL.createObjectURL(prepared));
             setIsCropperOpen(true);
         } catch {
@@ -114,9 +119,33 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
         }
     };
 
+    /** 后台预热整卷图压缩，失败不阻断识别 */
+    const preparePaperImage = () => {
+        const file = paperFileRef.current;
+        if (!file) return;
+        processImageFile(file)
+            .then((base64) => setPaperImage(base64))
+            .catch(() => setPaperImage(null));
+    };
+
+    /** 保存前确保整卷图已压缩；无图或压缩失败返回 null，不影响题目入库 */
+    const ensurePaperImage = async (): Promise<string | null> => {
+        if (paperImage) return paperImage;
+        const file = paperFileRef.current;
+        if (!file) return null;
+        try {
+            const base64 = await processImageFile(file);
+            setPaperImage(base64);
+            return base64;
+        } catch {
+            return null;
+        }
+    };
+
     const startBatch = (blobs: Blob[]) => {
         setIsCropperOpen(false);
         setLastImported(null);
+        preparePaperImage();
         setBatchBlobs(blobs);
     };
 
@@ -158,6 +187,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
 
     const cropComplete = (croppedBlob: Blob) => {
         setIsCropperOpen(false);
+        preparePaperImage();
         analyzeImage(new File([croppedBlob], "cropped-image.jpg", { type: "image/jpeg" }));
     };
 
@@ -220,12 +250,15 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
         const saved = await saveQuestion({
             ...finalData,
             originalImageUrl: currentImage || "",
+            paperImageUrl: await ensurePaperImage(),
             ...(fixedSubjectId ? { subjectId: fixedSubjectId } : {}),
         });
         if (saved) {
             setStep("upload");
             setParsedData(null);
             setCurrentImage(null);
+            setPaperImage(null);
+            paperFileRef.current = null;
         }
     };
 
@@ -238,7 +271,11 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
             setCroppingImage(null);
         },
         lastImported, dismissImported: () => setLastImported(null),
-        batchBlobs, closeBatch: () => setBatchBlobs(null),
+        batchBlobs, paperImage, closeBatch: () => {
+            setBatchBlobs(null);
+            setPaperImage(null);
+            paperFileRef.current = null;
+        },
         selectImage, cropComplete, startBatch, submitText, saveQuestion, saveReviewed,
     };
 }

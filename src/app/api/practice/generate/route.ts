@@ -9,6 +9,10 @@ import { describeQuestion, trackBackgroundTask } from "@/lib/background-tasks";
 import { parseLastPractice, serializeLastPractice } from "@/lib/last-practice";
 import type { LastPractice } from "@/lib/last-practice";
 import { consumeAiQuota } from "@/lib/ai-quota";
+import { GapCandidateSchema } from "@/lib/knowledge-gaps";
+import { gapDigest } from "@/lib/knowledge-gap-store";
+import type { KnowledgeFocus } from "@/lib/ai/types";
+import { generateAuditedQuestion } from "@/lib/ai/question-audit";
 
 const logger = createLogger('api:practice:generate');
 
@@ -73,19 +77,44 @@ export async function POST(req: Request) {
             tags = [];
         }
 
+        const diagnoses = await prisma.gapDiagnosis.findMany({
+            where: { errorItemId, status: 'confirmed', unit: { userId: session.user.id } },
+            orderBy: { createdAt: 'desc' }, take: 5,
+        });
+        const currentDiagnosis = diagnoses.find(d => d.sourceDigest === gapDigest(errorItemWithSubject));
+        let knowledgeFocus: KnowledgeFocus | undefined;
+        if (currentDiagnosis) {
+            try {
+                const parsed = GapCandidateSchema.safeParse(JSON.parse(currentDiagnosis.payload));
+                if (parsed.success) {
+                    const { gapType, triggerRule, boundary, unusedSignal, firstStuckStep } = parsed.data;
+                    knowledgeFocus = { gapType, triggerRule, boundary, unusedSignal, firstStuckStep };
+                }
+            } catch {
+                logger.warn({ diagnosisId: currentDiagnosis.id }, 'Ignoring invalid knowledge gap payload');
+            }
+        }
+
         const limited = await consumeAiQuota(session.user, 'practice');
         if (limited) return limited;
 
         const aiService = getAIService();
         const similarQuestion = await trackBackgroundTask(
             { userId: session.user.id, kind: 'practice', subject: describeQuestion(errorItemWithSubject), link: `/error-items/${errorItemId}` },
-            () => aiService.generateSimilarQuestion(
-                errorItemWithSubject.questionText || "",
-                tags,
-                language,
-                difficulty || 'medium',
-                errorItemWithSubject.gradeSemester,
-                errorItemWithSubject.figureSvg
+            () => generateAuditedQuestion(
+                aiService,
+                errorItemWithSubject.questionText || '',
+                language === 'en' ? 'en' : 'zh',
+                errorItemWithSubject.subject?.name ?? null,
+                () => aiService.generateSimilarQuestion(
+                    errorItemWithSubject.questionText || "",
+                    tags,
+                    language,
+                    difficulty || 'medium',
+                    errorItemWithSubject.gradeSemester,
+                    errorItemWithSubject.figureSvg,
+                    knowledgeFocus
+                ),
             )
         );
 

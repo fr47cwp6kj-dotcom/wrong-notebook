@@ -87,7 +87,7 @@ describe('知识漏洞闭环（真实 SQLite）', () => {
         expect(await database.knowledgeUnit.count()).toBe(1);
         expect(await database.unitPracticeEvent.count()).toBe(2);
         const { units } = await (await UNITS()).json();
-        expect(units[0]).toMatchObject({ attempts: 2, contexts: 2, mastered: true });
+        expect(units[0]).toMatchObject({ attempts: 2, contexts: 2, verificationStage: 'cross_context', mastered: false });
         await database.errorItem.update({ where: { id: 'q1' }, data: { questionText: '改后的题目' } });
         const response = await GET(new Request('http://localhost'), context());
         expect((await response.json()).diagnoses[0].stale).toBe(true);

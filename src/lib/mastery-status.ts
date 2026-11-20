@@ -25,12 +25,14 @@ export function masteryStatusWhere(status: MasteryStatus): Prisma.ErrorItemWhere
     if (status === 'new') {
         return { practiceRecords: { none: { result: { not: null } } } };
     }
+    // 已掌握由评估写入的 masteryLevel 判定（概率达标 + 跨题独立作答 + 后续复习验证），
+    // 旧数据缺新字段时保守显示为复习中，不会误判为已掌握
     if (status === 'mastered') {
-        return { ...HAS_PRACTICE_RECORDS, masteryProbability: { gte: MASTERY_THRESHOLD } };
+        return { ...HAS_PRACTICE_RECORDS, masteryLevel: 2 };
     }
     return {
         ...HAS_PRACTICE_RECORDS,
-        OR: [{ masteryProbability: null }, { masteryProbability: { lt: MASTERY_THRESHOLD } }],
+        masteryLevel: { not: 2 },
     };
 }
 
@@ -39,9 +41,13 @@ export const PRACTICE_RECORD_COUNT = {
     select: { practiceRecords: { where: { result: { not: null } } } },
 } satisfies Prisma.ErrorItemCountOutputTypeDefaultArgs;
 
-export function masteryStatusOf(practiceRecordCount: number, masteryProbability: number | null | undefined): MasteryStatus {
+export function masteryStatusOf(practiceRecordCount: number, masteryProbability: number | null | undefined, masteryLevel?: number | null): MasteryStatus {
     if (practiceRecordCount === 0) {
         return 'new';
+    }
+    // 评估后的 masteryLevel 是权威判定；未评估（null）时保守按复习中处理
+    if (typeof masteryLevel === 'number') {
+        return masteryLevel >= 2 ? 'mastered' : 'reviewing';
     }
     return typeof masteryProbability === 'number' && masteryProbability >= MASTERY_THRESHOLD ? 'mastered' : 'reviewing';
 }

@@ -1,13 +1,15 @@
 import type { GapInput, GapResult } from '../knowledge-gaps';
 import { parseGapResult } from './gap-result';
 import { AzureOpenAI } from "openai";
-import { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
-import { generateGapPrompt, generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt, generateMasteryPrompt, generateGradingPrompt, generateTagSuggestPrompt, generateFigurePrompt, generateSvgAnimationPrompt, generateLatexFixPrompt, SVG_ANIMATION_REQUEST } from './prompts';
-import { sanitizeSvgAnimation } from '../svg-animation';
+import { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, WrongAnswerRecognitionResult } from "./types";
+import type { KnowledgeFocus } from './types';
+import { generateGapPrompt, generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt, generateMasteryPrompt, generateGradingPrompt, generateTagSuggestPrompt, generateFigurePrompt, generateWrongAnswerPrompt, generateSvgAnimationPrompt, generateLatexFixPrompt, SVG_ANIMATION_REQUEST } from './prompts';
+import { buildSvgAnimationResult } from '../svg-animation';
+import type { SvgAnimationResult } from '../svg-animation';
 import { parseLatexFix } from './latex-fix';
 import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import { getAppConfig } from '../config';
-import { safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseQuestionKnowledgePoints, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
+import { safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseQuestionKnowledgePoints, parseTagSuggestion, parseDifficultyStars, parseFigure, parseWrongAnswerText } from './schema';
 import { prefetchSubjectTags } from './tag-service';
 import { createLogger } from '../logger';
 import { AI_OUTPUT_TRUNCATED, withTruncationRetry } from './truncation';
@@ -238,12 +240,14 @@ export class AzureOpenAIProvider implements AIService {
         language: 'zh' | 'en' = 'zh',
         difficulty: DifficultyLevel = 'medium',
         gradeSemester?: string | null,
-        originalFigureSvg?: string | null
+        originalFigureSvg?: string | null,
+        knowledgeFocus?: KnowledgeFocus
     ): Promise<ParsedQuestion> {
         const config = getAppConfig();
         const systemPrompt = generateSimilarQuestionPrompt(language, originalQuestion, knowledgePoints, difficulty, {
             customTemplate: config.prompts?.similar,
             originalFigureSvg,
+            knowledgeFocus,
         }, gradeSemester);
         const userPrompt = `
 Original Question: "${originalQuestion}"
@@ -518,6 +522,32 @@ Knowledge Points: ${knowledgePoints.join(", ")}
         }
     }
 
+    async recognizeWrongAnswer(imageBase64: string, mimeType?: string, questionText?: string | null): Promise<WrongAnswerRecognitionResult> {
+        const prompt = generateWrongAnswerPrompt(questionText);
+        logger.info({ provider: 'Azure OpenAI', deployment: this.deployment, imageSize: imageBase64.length }, 'Wrong answer recognition Request');
+
+        try {
+            const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
+                model: this.deployment,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: [{ type: "image_url", image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBase64}` } }] },
+                ],
+                max_tokens: maxTokens,
+            }), 4096, () => logger.warn('Output truncated by reasoning, retrying with larger max_tokens'));
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Wrong answer recognition AI raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return { wrongAnswerText: parseWrongAnswerText(this.extractTag(text, "wrong_answer_text")) };
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during wrong answer recognition');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
     async fixLatex(input: LatexFixInput): Promise<LatexFixResult> {
         const prompt = generateLatexFixPrompt(input);
         logger.info({ provider: 'Azure OpenAI', deployment: this.deployment, fields: Object.keys(input) }, 'LaTeX Fix Request');
@@ -544,7 +574,7 @@ Knowledge Points: ${knowledgePoints.join(", ")}
         }
     }
 
-    async generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language: 'zh' | 'en' = 'zh'): Promise<string | null> {
+    async generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language: 'zh' | 'en' = 'zh'): Promise<SvgAnimationResult | null> {
         const prompt = generateSvgAnimationPrompt(questionText, answerText, analysis, figureSvg, language);
         logger.info({ provider: 'Azure OpenAI', deployment: this.deployment, questionLength: questionText.length }, 'SVG Animation Request');
 
@@ -562,7 +592,7 @@ Knowledge Points: ${knowledgePoints.join(", ")}
             logger.debug({ rawResponse: text }, 'SVG animation AI raw response');
 
             if (!text) throw new Error("Empty response from AI");
-            return sanitizeSvgAnimation(this.extractTag(text, "svg_animation") || text);
+            return buildSvgAnimationResult(this.extractTag(text, "svg_animation") || text, this.extractTag(text, "animation_steps"));
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during SVG animation generation');
             this.handleError(error);

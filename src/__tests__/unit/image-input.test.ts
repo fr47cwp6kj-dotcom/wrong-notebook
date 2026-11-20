@@ -43,6 +43,12 @@ describe('HEIC 图片准备', () => {
         expect(mocks.heicTo).toHaveBeenCalledTimes(1);
     });
 
+    it('canvas 不可用时小图原样返回 Base64（放大步骤跳过）', async () => {
+        const result = await processImageFile(new File(['tiny'], 'crop.jpg', { type: 'image/jpeg' }));
+        expect(result).toBe('data:image/jpeg;base64,dGlueQ==');
+        expect(mocks.heicTo).not.toHaveBeenCalled();
+    });
+
     it('损坏的 HEIC 不会作为原始数据继续上传', async () => {
         mocks.heicTo.mockRejectedValueOnce(new Error('decode failed'));
         await expect(processImageFile(new File(['broken'], 'photo.heic'))).rejects.toThrow('decode failed');

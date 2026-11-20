@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/margrop/wrong-notebook",
+  "release": "v2026.10.26",
+  "sourceArchive": "https://codeload.github.com/margrop/wrong-notebook/tar.gz/refs/tags/v2026.10.26",
+  "sourceSHA256": "9d4f2c5dcc4b5df3ef6f0ac9715175cacd342d01e83e2169b323a4d5e0f86565",
+  "license": "MIT",
+  "forkedAt": "2026-10-29",
+  "localFeatures": [
+    "知识漏洞候选诊断",
+    "学生确认与不确定状态",
+    "人工复核的卡点小练",
+    "知识单元跨题统计",
+    "原始 V1 备份"
+  ]
+}

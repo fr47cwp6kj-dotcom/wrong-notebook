@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_SVG_ANIMATION_LENGTH, sanitizeSvgAnimation } from '@/lib/svg-animation';
+import { MAX_SVG_ANIMATION_LENGTH, parseSvgAnimationSteps, sanitizeSvgAnimation } from '@/lib/svg-animation';
 import { generateSvgAnimationPrompt } from '@/lib/ai/prompts';
 
 const animation = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">'
@@ -108,5 +108,29 @@ describe('SVG 动画时长与画面', () => {
         const doc = buildSvgAnimationDocument(animation);
         expect(doc).toContain("default-src 'none'");
         expect(doc).toContain(animation);
+    });
+});
+
+describe('parseSvgAnimationSteps', () => {
+    it('解析 JSON 步骤并按开始时间升序重排序号', () => {
+        const steps = parseSvgAnimationSteps('[{"index":2,"title":"作辅助线","begin":"6s"},{"index":1,"title":"读题","begin":0}]');
+        expect(steps).toEqual([
+            { index: 1, title: '读题', begin: 0 },
+            { index: 2, title: '作辅助线', begin: 6 },
+        ]);
+    });
+
+    it('空值、非法 JSON 或少于两步时返回空数组', () => {
+        expect(parseSvgAnimationSteps(null)).toEqual([]);
+        expect(parseSvgAnimationSteps('')).toEqual([]);
+        expect(parseSvgAnimationSteps('not json')).toEqual([]);
+        expect(parseSvgAnimationSteps('[{"index":1,"title":"唯一一步","begin":0}]')).toEqual([]);
+    });
+
+    it('跳过缺标题或 begin 非法的条目', () => {
+        expect(parseSvgAnimationSteps('[{"title":"","begin":0},{"title":"缺 begin"},{"index":3,"title":"第一步","begin":"1min"},{"index":4,"title":"负时间","begin":-2},{"index":5,"title":"第二步","begin":90}]')).toEqual([
+            { index: 1, title: '第一步', begin: 60 },
+            { index: 2, title: '第二步', begin: 90 },
+        ]);
     });
 });

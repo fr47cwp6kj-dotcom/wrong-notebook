@@ -25,6 +25,8 @@ const record = (result: string, difficulty = 'medium', day = 1) => ({
     result,
     difficulty,
     source: 'practice',
+    questionText: `变式题 ${day}`,
+    hintUsed: false,
     createdAt: new Date(`2026-10-${String(day).padStart(2, '0')}T00:00:00Z`),
 });
 
@@ -107,9 +109,10 @@ describe('evaluateErrorItemMastery', () => {
         const input = mocks.evaluateMastery.mock.calls[0][0];
         expect(input.knowledgePoints).toEqual(['方程']);
         expect(input.history).toHaveLength(2);
+        // 两次跨天独立答对满足跨题条件，但尚未经过后续复习验证，保持复习中并提示
         expect(mocks.update).toHaveBeenCalledWith({
             where: { id: 'item-1' },
-            data: expect.objectContaining({ masteryProbability: 0.86, masterySource: 'ai', masteryLevel: 2, masteryReason: '连续做对困难题' }),
+            data: expect.objectContaining({ masteryProbability: 0.86, masterySource: 'ai', masteryLevel: 1, masteryReason: '连续做对困难题（等待后续复习验证）' }),
         });
     });
 

@@ -26,10 +26,20 @@ export interface ReanswerQuestionResult {
 
 export type { FigureResult } from './schema';
 export type { LatexFixInput, LatexFixResult } from './latex-fix';
+export type { SvgAnimationResult, SvgAnimationStep } from '../svg-animation';
+import type { SvgAnimationResult } from '../svg-animation';
 import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import type { FigureResult } from './schema';
 
 export type PracticeResult = 'correct' | 'wrong' | 'not_attempted';
+
+export interface KnowledgeFocus {
+    gapType: string;
+    triggerRule: string;
+    boundary: string;
+    unusedSignal: string;
+    firstStuckStep: string;
+}
 
 export interface MasteryHistoryEntry {
     date: string;            // ISO 时间
@@ -66,6 +76,11 @@ export interface MasteryEvaluationResult {
     reason: string;
 }
 
+/** 拍照识别学生错答的结果 */
+export interface WrongAnswerRecognitionResult {
+    wrongAnswerText: string;
+}
+
 export interface TagSuggestionInput {
     questionText: string;
     answerText?: string | null;
@@ -92,14 +107,16 @@ export interface AIService {
     diagnoseKnowledgeGaps(input: GapInput): Promise<GapResult>;
     analyzeImage(imageBase64: string, mimeType?: string, language?: 'zh' | 'en', grade?: GradeLevel | null, subject?: string | null, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ParsedQuestionFromSchema>;
     /** originalFigureSvg：原题的 SVG 配图，新题需要配图时据此重新绘制 */
-    generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language?: 'zh' | 'en', difficulty?: DifficultyLevel, gradeSemester?: string | null, originalFigureSvg?: string | null): Promise<ParsedQuestionFromSchema>;
+    generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language?: 'zh' | 'en', difficulty?: DifficultyLevel, gradeSemester?: string | null, originalFigureSvg?: string | null, focus?: KnowledgeFocus): Promise<ParsedQuestionFromSchema>;
     /** 根据题目图片单独重绘配图 */
     generateFigureSvg(imageBase64: string, mimeType: string, questionText?: string | null): Promise<FigureResult>;
+    /** 从作答照片中摘录学生手写作答，未识别到时 wrongAnswerText 为空字符串 */
+    recognizeWrongAnswer(imageBase64: string, mimeType?: string, questionText?: string | null): Promise<WrongAnswerRecognitionResult>;
     reanswerQuestion(questionText: string, language?: 'zh' | 'en', subject?: string | null, imageBase64?: string, gradeSemester?: string | null, candidateTags?: CandidateTags): Promise<ReanswerQuestionResult>;
     /** 只修复各字段中的 LaTeX 语法，返回 AI 修复后的字段内容 */
     fixLatex(input: LatexFixInput): Promise<LatexFixResult>;
-    /** 生成 SVG 动画讲解（已净化），无有效 SVG 时返回 null；figureSvg 为题目配图，language 决定动画中文字的语言 */
-    generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language?: 'zh' | 'en'): Promise<string | null>;
+    /** 生成 SVG 动画讲解（已净化，含分步时间轴），无有效 SVG 时返回 null；figureSvg 为题目配图，language 决定动画中文字的语言 */
+    generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language?: 'zh' | 'en'): Promise<SvgAnimationResult | null>;
     evaluateMastery(input: MasteryEvaluationInput): Promise<MasteryEvaluationResult>;
     /** 对照标准答案判定学生答案是否正确 */
     gradeAnswer(input: AnswerGradingInput): Promise<AnswerGradingResult>;

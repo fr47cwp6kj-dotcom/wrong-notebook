@@ -15,6 +15,7 @@ import { scheduleMasteryEvaluation } from "@/lib/mastery";
 import { findDuplicateQuestion, recordDuplicateQuestion, runQuestionImportTransaction } from "@/lib/question-deduplication";
 import { MAX_FIGURE_SVG_LENGTH, sanitizeFigureSvg } from "@/lib/figure-svg";
 import { getDefaultPaperLevel } from "@/lib/paper-level";
+import { findOrCreatePaperImage, MAX_PAPER_IMAGE_LENGTH } from "@/lib/paper-image";
 import { getAppTimeZone } from "@/lib/config";
 import { QuestionKnowledgePointsSchema } from "@/lib/ai/schema";
 
@@ -33,6 +34,8 @@ const importSchema = z.object({
     ),
     questionKnowledgePoints: QuestionKnowledgePointsSchema.nullish(),
     originalImageUrl: z.string().max(20 * 1024 * 1024).default(''),
+    // 整张试卷原图（data URL），同一张卷的多道错题按内容哈希共享
+    paperImageUrl: z.string().max(MAX_PAPER_IMAGE_LENGTH).nullish(),
     subjectId: z.string().nullish(),
     subjectName: z.string().max(100).nullish(),
     gradeSemester: z.string().max(100).nullish(),
@@ -62,6 +65,7 @@ export async function POST(req: Request) {
             knowledgePoints,
             questionKnowledgePoints,
             originalImageUrl,
+            paperImageUrl,
             subjectId: requestedSubjectId,
             subjectName,
             gradeSemester,
@@ -109,8 +113,25 @@ export async function POST(req: Request) {
         }
 
         const result = await runQuestionImportTransaction(async (tx) => {
+            // 整卷图按内容哈希去重后关联；解析失败不影响题目入库
+            let paperImageId: string | undefined;
+            if (typeof paperImageUrl === 'string' && paperImageUrl.startsWith('data:image/')) {
+                try {
+                    paperImageId = (await findOrCreatePaperImage(tx, user.id, paperImageUrl)).id;
+                } catch (paperError) {
+                    logger.error({ error: paperError, imageSize: paperImageUrl.length }, 'Failed to save paper image');
+                }
+            }
+
             const duplicate = await findDuplicateQuestion(tx, user.id, body);
-            if (duplicate) return recordDuplicateQuestion(tx, user.id, duplicate, body);
+            if (duplicate) {
+                const recorded = await recordDuplicateQuestion(tx, user.id, duplicate, body);
+                // 原题缺少整卷图时补挂本次上传的整卷图
+                if (paperImageId && !recorded.paperImageId) {
+                    await tx.errorItem.update({ where: { id: recorded.id }, data: { paperImageId } });
+                }
+                return recorded;
+            }
 
             // 未指定错题本时，按学科名匹配或新建错题本
             let subjectId: string | undefined = requestedSubjectId || undefined;
@@ -184,6 +205,7 @@ export async function POST(req: Request) {
                         userId: user.id,
                         subjectId: subjectId || undefined,
                         originalImageUrl,
+                        paperImageId: paperImageId ?? undefined,
                         questionText,
                         answerText,
                         analysis,

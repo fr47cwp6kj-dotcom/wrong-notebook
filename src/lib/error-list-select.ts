@@ -10,6 +10,7 @@ export const ERROR_ITEM_LIST_SELECT = {
     knowledgePoints: true,
     difficultyStars: true,
     masteryProbability: true,
+    masteryLevel: true,
     createdAt: true,
     tags: { select: { name: true } },
     _count: PRACTICE_RECORD_COUNT,

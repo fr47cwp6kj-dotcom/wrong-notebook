@@ -60,7 +60,7 @@ describe('SVG 动画讲解按界面语言生成', () => {
         await clickButton('生成动画讲解');
 
         expect(mocks.post).toHaveBeenCalledWith('/api/error-items/e1/svg-animation', { language: 'zh' }, expect.anything());
-        expect(onChange).toHaveBeenCalledWith('zh', svg);
+        expect(onChange).toHaveBeenCalledWith('zh', svg, null);
     });
 
     it('英文界面生成英文版动画', async () => {
@@ -72,7 +72,7 @@ describe('SVG 动画讲解按界面语言生成', () => {
         await clickButton('Generate animation');
 
         expect(mocks.post).toHaveBeenCalledWith('/api/error-items/e1/svg-animation', { language: 'en' }, expect.anything());
-        expect(onChange).toHaveBeenCalledWith('en', svg);
+        expect(onChange).toHaveBeenCalledWith('en', svg, null);
     });
 
     it('英文界面只删除英文版动画', async () => {
@@ -85,7 +85,7 @@ describe('SVG 动画讲解按界面语言生成', () => {
         await clickButton('Delete');
 
         expect(mocks.delete).toHaveBeenCalledWith('/api/error-items/e1/svg-animation?language=en');
-        expect(onChange).toHaveBeenCalledWith('en', null);
+        expect(onChange).toHaveBeenCalledWith('en', null, null);
     });
 
     it('当前语言未生成但另一语言已有动画时提示切换语言查看', async () => {
@@ -102,7 +102,7 @@ describe('打开题目自动提供动画', () => {
         await render({ onChange });
         expect(mocks.post).toHaveBeenCalledTimes(1);
         expect(mocks.post).toHaveBeenCalledWith('/api/error-items/e1/svg-animation', { language: 'zh', reuseExisting: true }, expect.anything());
-        expect(onChange).toHaveBeenCalledWith('zh', svg);
+        expect(onChange).toHaveBeenCalledWith('zh', svg, null);
     });
     it('已有动画时直接显示播放器，不重新调用 AI', async () => {
         await render({ svgAnimation: svg });

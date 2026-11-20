@@ -36,6 +36,10 @@ export class MiniMaxCodeProvider implements AIService {
         return this.run((p) => p.generateFigureSvg(...args));
     }
 
+    recognizeWrongAnswer(...args: Parameters<AIService['recognizeWrongAnswer']>) {
+        return this.run((p) => p.recognizeWrongAnswer(...args));
+    }
+
     reanswerQuestion(...args: Parameters<AIService['reanswerQuestion']>) {
         return this.run((p) => p.reanswerQuestion(...args));
     }

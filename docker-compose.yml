@@ -1,17 +1,18 @@
+version: '3'
+
 services:
-  cuoyin-agent-beta:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: cuoyin-agent-beta:2026-11-10
-    container_name: cuoyin-agent-beta
-    restart: unless-stopped
+  wrong-notebook:
+    image: ghcr.io/margrop/wrong-notebook:latest
+    container_name: wrong-notebook
+    restart: always
     ports:
-      - "127.0.0.1:39301:3000"
+      - "3000:3000"
     environment:
-      NEXTAUTH_SECRET: "a4a8e9efd5d20f984f62de209d1c734c9a355c44ed41f3d9498748f77edd7559"
-      AUTH_TRUST_HOST: "true"
-      PRESERVE_EXISTING_DATA: "true"
+      # NEXTAUTH_URL 根据实际情况设置你的信息
+      #- NEXTAUTH_URL=http://your_domain_name:3000
+      - NEXTAUTH_SECRET=your_secret_key
     volumes:
+      # Persist the SQLite database
       - ./data:/app/data
       - ./config:/app/config
+

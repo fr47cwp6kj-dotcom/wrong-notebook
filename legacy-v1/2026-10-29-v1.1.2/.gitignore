@@ -1,0 +1,22 @@
+# V1 会把照片收件箱放在本目录下时，避免把学生照片提交进仓库。
+错题/
+.错因Agent
+data/
+reports/
+
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.webp
+
+# 后续本地服务与数据文件。
+*.sqlite
+*.sqlite3
+*.db
+.env
+.venv/
+__pycache__/
+node_modules/
+dist/
+build/

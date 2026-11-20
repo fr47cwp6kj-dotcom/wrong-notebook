@@ -35,6 +35,14 @@ export function checkTunnel(current) {
     if (!hasToken(current)) throw new Error('请先双击“配置cpolar账号.command”完成本机授权。');
     if (!/^  cuoyin:\s*$/m.test(current)) throw new Error('固定域名隧道还未配置，请先完成域名预留、解析和 HTTPS 证书。');
 
+    const subdomain = /^    subdomain:(.*)$/m.exec(current)?.[1]?.trim();
+    if (subdomain !== undefined) {
+        if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(subdomain)) throw new Error('cpolar 二级域名格式不正确。');
+        const region = /^    region:\s*(\S+)\s*$/m.exec(current)?.[1] ?? /^region:\s*(\S+)\s*$/m.exec(current)?.[1];
+        if (region !== 'cn_vip_top') throw new Error('cpolar 二级域名地区与预留地区不一致。');
+        return;
+    }
+
     const crt = /^    crt:\s*("[^"\n]+")\s*$/m.exec(current)?.[1];
     const key = /^    key:\s*("[^"\n]+")\s*$/m.exec(current)?.[1];
     if (!crt || !key) throw new Error('固定域名 HTTPS 证书尚未配置。');
@@ -44,6 +52,13 @@ export function checkTunnel(current) {
     if (!existsSync(certificatePath) || !existsSync(privateKeyPath)) {
         throw new Error('找不到固定域名 HTTPS 证书或私钥文件。');
     }
+}
+
+export function getTunnelTarget(current) {
+    const match = /^    addr:\s*([A-Za-z0-9.-]+):([0-9]{1,5})\s*$/m.exec(current);
+    const port = Number(match?.[2]);
+    if (!match || port < 1 || port > 65535) throw new Error('cpolar 隧道本地地址格式不正确。');
+    return `${match[1]}:${port}`;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -63,6 +78,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
             writeFileSync(configFile, next, { mode: 0o600 });
             chmodSync(configFile, 0o600);
             console.info('固定域名证书路径已保存到本机。');
+        } else if (process.argv.includes('--target')) {
+            checkTunnel(current);
+            console.info(getTunnelTarget(current));
         } else {
             checkTunnel(current);
         }

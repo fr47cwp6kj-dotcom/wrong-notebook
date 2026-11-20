@@ -1,33 +1,49 @@
-# 错因 Agent（智能错题本）
+# 错因 Agent · wrong-notebook 复刻增强版
 
-拍照上传错题，AI 识别题目、解答、分析错因并打知识点标签；支持错题本管理、举一反三练习、错题试卷打印、知识漏洞诊断与掌握度跟踪。数据保存在自己机器上，AI 服务自行配置。支持 **Mac 桌面版**（Releases 下载安装包）与**网页自托管**（Docker 或源码运行）两种使用方式。
+基于 [margrop/wrong-notebook v2026.10.26](https://github.com/margrop/wrong-notebook/releases/tag/v2026.10.26)，保留上游错题本功能，并加入原 V1 的知识漏洞诊断流程。保留上游 MIT 许可，来源与源码摘要见 [UPSTREAM.json](UPSTREAM.json)。
 
-首次账号 `admin@localhost`，密码 `123456`，按安装向导修改密码并配置自己的 AI 服务。未配置 AI 时仍可手工录入题目和诊断卡。源码运行：安装 Node.js 22.15+，执行 `npm ci --registry=https://registry.npmjs.org` 与 `npx prisma generate`，再 `npm run dev` 打开 <http://localhost:3000>；外网访问可参考 [固定网址访问](doc/REMOTE_ACCESS.md) 自行配置反向代理或隧道。
+## 本机启动
 
-## 核心功能
+双击根目录的 **启动错因Agent.command**（Mac），浏览器打开 <http://localhost:3333>。使用期间保留启动窗口；关闭窗口或按 Ctrl+C 停止。Windows 可使用 `启动错因Agent.cmd`。
+
+首次账号 `admin@localhost`，密码 `123456`，按安装向导修改密码并配置自己的 AI 服务。未配置 AI 时仍可手工录入题目和诊断卡。
+
+新环境先安装 Node.js 22.15+，执行 `npm ci --registry=https://registry.npmjs.org` 与 `npx prisma generate`，再运行启动文件。
+
+固定外网网址使用独立的正式版：在 `.env` 填写 `CUOYIN_PUBLIC_URL`，将已有穿透服务指向 `http://127.0.0.1:3334`，再运行 **启动错因Agent正式版.command**。账号、错题和 AI 设置沿用本地数据；首次构建及更新方法见[固定网址访问](doc/REMOTE_ACCESS.md)。穿透平台的域名和授权需要先完成配置。
+
+cpolar 用户可预留固定二级域名，配置 `subdomain` 和相同地区，再双击 **启动错因Agent外网.command**。隧道目标为 `127.0.0.1:3334` 时启动本机正式版；目标为 NAS 等其他地址时，先检查该服务健康，再只启动隧道。使用本机正式版时，`.env` 的 `CUOYIN_PUBLIC_URL` 须与 HTTPS 地址一致。关闭窗口时隧道停止。本次固定网址连接群晖已有数据，Mac 本机数据库与群晖数据库各自独立。
+
+## 这份版本新增了什么
 
 - 题目详情中的“知识漏洞诊断”：首个卡点、未使用条件、原文证据、表层错因、深层漏洞、触发规则与学生追问。
 - AI 或手工记录均先成为候选；学生可以确认、标记不确定或拒绝。AI 证据无法在题干或作答中找到时拒绝保存；缺少作答时要求补充信息。
 - 确认诊断并人工复核小练与答案后，记录独立完成、需要提示或仍有困难。
-- “知识单元”页跨题汇总练习。同一用户、学段、学科下名称、触发规则及适用边界相同的单元复用；至少两个原题情境连续通过才显示“已跨题验证”。
+- “知识单元”页跨题汇总练习。同一用户、学段、学科下名称、触发规则及适用边界相同的单元复用；至少两个原题情境连续独立通过才显示“已跨题验证”。旧小练记录缺少先作答证据，保留历史但不计为独立通过。
 - 修改题干、作答或参考解答后，旧诊断会标记过期并停止参与掌握统计；原有记录保留。
-- 备份导出/导入同时保留诊断、确认状态、知识单元和小练历史。
+- 上游导出/导入同时保留诊断、确认状态、知识单元和小练历史。
 
-源码运行时数据保存在本地 SQLite 数据库；桌面版与源码版使用各自的数据目录，可通过设置里的备份导入导出迁移。
+本机数据使用 `data/cuoyin-fork.db`；此前下载安装的官方桌面版使用自己的数据目录。两者可通过设置里的备份导入导出迁移，官方版本不能完整恢复本分支新增的诊断数据。
 
-历史 V1 完整备份位于 [legacy-v1/2026-10-29-v1.1.2](legacy-v1/2026-10-29-v1.1.2)，逐文件 SHA-256 清单为 `BACKUP-MANIFEST.json`，原诊断文档见 [doc/cuoyin-v1](doc/cuoyin-v1)。
+原始 V1 完整备份位于 [legacy-v1/2026-10-29-v1.1.2](legacy-v1/2026-10-29-v1.1.2)，逐文件 SHA-256 清单为 `BACKUP-MANIFEST.json`。原诊断文档另保留于 [doc/cuoyin-v1](doc/cuoyin-v1)。这次没有自动导入旧照片；可在网页选择照片上传。
 
 网页上传、拖拽和替换原题图片支持 JPG、PNG、WebP、GIF、HEIC/HEIF、BMP 和 AVIF。剪贴板提供图片文件时也可直接粘贴，包括只有扩展名可用于识别格式的 iPhone 原图。HEIC/HEIF 在浏览器本地转成 JPEG 后再裁剪，多图文件只导入主图。
 
 默认图片识别会将题目配图重绘成紧凑的 SVG 示意图，保留解题所需的结构和标注。需要更详细的图时，可在题目详情页点击「AI 重新生成配图」。
 
+拍照导入时会一并保存整张试卷的原图，并关联到本次导入的每道错题；错题详情页点「整卷原图」可随时回看当时拍的整卷。校对页和错题详情页的原图支持点击放大全屏查看，详情页默认显示原图，宽屏时与题干左右并排并随页面滚动保持可见，方便对照检查识别结果。AI 重绘的配图如有失真，详情页会提示以上方原图照片为准。
+
+识别时没认出学生的错误作答，可在详情页「我的答案」卡片点「拍照识别错答」：拍作答区域的照片，AI 摘录手写作答原文并保存照片，作答状态自动改为「做错了」。SVG 动画讲解支持分步点击：动画下方列出关键步骤，点某一步直接从该处开始播放。
+
 “校对与保存”页按题号和「题目 / 答案 / 解析 / 错因」两层分类，默认显示排版预览，长内容可展开或收起，原图与知识点按需查看。点击“源代码”或双击预览可修改当前题的文字和公式；无法匹配题号的内容可从「全文」查看和编辑。分类不删除原文，保存仍包含整份识别结果；需要逐题独立入库时，请使用上传时的多题框选。
 
-详细使用方法和验收说明：[使用指南](doc/CUOYIN_FORK.md)。
+详细使用方法和验收说明：[复刻版使用指南](doc/CUOYIN_FORK.md)。
 
-数学错题本的自动知识点基于**浙教版初二上**（含必要的前置基础）。几何最短路径使用明确的应用标签，不能确定时留空。校对页展开「知识点」后可按题号修改，每题最多 5 个，随题保存并纳入备份；旧题需点击「重新识别知识点」后更新。清单来源与限制见[数学教材范围](doc/MATH_CURRICULUM.md)。
+本复刻版已将所有数学错题本的自动知识点统一到**浙教版初二上**，含必要的前置基础；不再借用原人教版标签树的同名学期。几何最短路径使用明确的应用标签，不能确定时留空。校对页展开「知识点」后可按题号修改，每题最多 5 个，随题保存并纳入备份；旧题需点击「重新识别知识点」后更新。清单来源与限制见[数学教材范围](doc/MATH_CURRICULUM.md)。
 
 ---
+
+以下为上游项目原始说明。
 
 <p align="center">
   <img src="public/icons/icon.png" width="128" height="128" alt="智能错题本应用图标">
@@ -37,16 +53,21 @@
 
 **简体中文** | [English](README.en.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/margrop/wrong-notebook?include_prereleases)](https://github.com/margrop/wrong-notebook/releases) [![CI](https://github.com/margrop/wrong-notebook/actions/workflows/ci.yml/badge.svg)](https://github.com/margrop/wrong-notebook/actions/workflows/ci.yml) [![CodeQL](https://github.com/margrop/wrong-notebook/actions/workflows/codeql.yml/badge.svg)](https://github.com/margrop/wrong-notebook/actions/workflows/codeql.yml) [![npm](https://img.shields.io/npm/v/wrong-notebook)](https://www.npmjs.com/package/wrong-notebook)
+
 一个基于 AI 的智能错题管理系统：拍照或输入题目后，由 AI 识别、解答、打知识点标签并评定难度，支持错题本管理、举一反三练习、组卷打印和掌握程度跟踪。
+
+🌐 **项目介绍页**：<https://blog.margrop.net/wrong-notebook-github-pages/>
 
 🚀 **在线演示**：<https://wrong-notebook-demo.vercel.app>（账号 `demo@localhost`，密码 `demo123456`）
 
 > 演示站点为共享账号，数据对所有访客可见，请勿录入个人信息。
 
-📦 **多平台安装**：Docker 镜像（amd64 / arm64）· npm（`npm i -g wrong-notebook`）· Windows · macOS · Linux · 飞牛OS · 安卓手机 / 平板（单机版内置服务端，或连接服务器的客户端），安装包见 [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases)，安装方式见[快速开始](#-快速开始)。
+📦 **多平台安装**：Docker 镜像（amd64 / arm64）· npm（`npm i -g wrong-notebook`）· Windows · macOS · Linux · 飞牛OS · 安卓手机 / 平板（单机版内置服务端，或连接服务器的客户端），安装包见 [Releases](https://github.com/margrop/wrong-notebook/releases)，安装方式见[快速开始](#-快速开始)。
 
 🆓 **免费的 MiniMax 账号就能用**：选择「MiniMax Code OAuth」渠道，用 MiniMax Code 账号网页登录即可调用 `MiniMax-M3.1-Flash`，不需要购买 API Key。应用每天自动签到领取积分，识题、讲解等 AI 功能消耗的是账号的免费积分额度，详见 [MiniMax Code OAuth](#minimax-code-oauth)。
+
+> 本仓库 fork 自 [wttwins/wrong-notebook](https://github.com/wttwins/wrong-notebook)，在其基础上增加了较多功能（见下文）。
 
 ## 🖼️ 功能预览
 
@@ -92,7 +113,13 @@
 <details>
 <summary><strong>复习反馈：回看变式题、作答历史和 AI 掌握概率</strong></summary>
 
-原题下汇总举一反三和试卷作答结果，展开记录可回看变式题与答案。AI 根据实际作答历史评估掌握概率，辅助安排后续复习。
+原题下汇总举一反三和试卷作答结果，展开记录可回看变式题与答案。AI 根据实际作答历史评估掌握概率，辅助安排后续复习。「已掌握」的确认规则：概率达标只是必要条件，还需要在至少两道不同变式题中独立答对（同一题隔天或换来源作答仍算同一情境；没有题目快照的旧记录不能证明跨题；作答前看提示或解答不算独立通过），并在一次已完成的复习之后再次独立答对；条件不足时保持「复习中」，界面会提示还差哪一步（如「等待后续复习验证」）。后续复习做错会自动回到「复习中」，练习历史保留。知识漏洞诊断按「错在哪 → 为什么 → 接下来练什么」三步呈现，深层分析可折叠展开。
+
+练习题关联已确认且未过期的知识漏洞时，页面会按「未用条件 → 触发规则 → 首个卡住步骤」依次展示可用提示。练习记录保存最高提示级别；使用提示后答对、直接看答案后自报做对，都不计为独立通过。没有可用诊断时保留原有练习流程。
+
+知识漏洞报告默认只展示最近一条的「错在哪」，可依次查看「为什么」和「接下来练什么」，完整诊断与证据可按需展开。知识单元掌握状态分为待验证、初步通过、跨题验证中、暂时掌握和稳定掌握；边界对比题与后续复习是进入后两档的必要证据，失败会回退。
+
+这类举一反三题生成时还会把漏洞类型、触发规则、适用边界、未用条件和首个卡点传给 AI，要求题目检验规则的适用条件。生成结果会先检查题干、答案和解析是否存在；目前这一步尚不等于数学正确性证明。
 
 ![已有试卷变式题、先错后对的作答历史与 AI 掌握概率评估](doc/screenshots/mastery-history.png)
 
@@ -137,7 +164,7 @@
 
 ### 录入与识别
 
-- **📷 多种录入方式**：上传图片、从剪贴板粘贴（Ctrl/⌘+V）、屏幕截图，或直接输入题目文字（支持 Markdown 和 LaTeX）；图片可裁剪（支持滚轮、双指捏合或按钮缩放图片，方便精确框选），也可在一张图上框选多道题批量导入。
+- **📷 多种录入方式**：上传图片、从剪贴板粘贴（Ctrl/⌘+V）、屏幕截图，或直接输入题目文字（支持 Markdown 和 LaTeX）；图片可裁剪（支持滚轮、双指捏合或按钮缩放图片，方便精确框选），也可在一张图上框选多道题批量导入。题目文字与几何图/函数图在卷面上分离时，用「一题拼图」为同一道题框多个区域，自动按版面顺序拼接成完整题图。
 - **🤖 AI 识别与解答**：识别题目文字、答案、解析、学生的错误解答和错因，判断学科，并从知识点库中选择标签。单题识别和文字解题始终先进入校对页，修改题目、选择错题本后点击保存。解析聚焦关键步骤，错因附上可立即执行的改进动作；没有作答证据时不猜测错因。
 - **🔁 重复题判定**：导入时比较题干相似度，超过阈值（默认 90%，可在设置中调整）的题目不会重复导入，而是在原题下记一次做错。
 - **🆔 题目 ID**：每道题有 6 位 ID，可复制，也可在错题本中输入 ID 直接打开该题；打印的错题和试卷都标有「来源 ID」，方便做完后定位原题录入结果。
@@ -176,14 +203,14 @@
 
 ## 📸 屏幕截图功能 (HTTPS 设置)
 
-屏幕截图依赖浏览器的安全上下文 (HTTPS)。在 Docker 或远程访问时，请参考 **[HTTPS 配置指南](doc/HTTPS_SETUP.md)** 启用内置 HTTPS 支持。
+屏幕截图依赖浏览器的安全上下文 (HTTPS)。在 Docker 或局域网环境中使用时，请参考 **[HTTPS 配置指南](doc/HTTPS_SETUP.md)** 启用内置 HTTPS 支持。
 
 ## 📱 PWA 支持 (添加到主屏幕)
 
 本项目支持 PWA，可将应用添加到手机或平板主屏幕，全屏运行、点击图标直接打开，平板可横屏使用。
 
 - **iPhone / iPad (Safari)**: 点击底部 **分享** 按钮 -> 选择 **"添加到主屏幕"**。
-- **Android (Chrome)**: 点击右上角 **菜单** -> 选择 **"添加到主屏幕"** 或 **"安装应用"**。也可以安装 [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) 中的安卓 App（见下文安装包）。
+- **Android (Chrome)**: 点击右上角 **菜单** -> 选择 **"添加到主屏幕"** 或 **"安装应用"**。也可以安装 [Releases](https://github.com/margrop/wrong-notebook/releases) 中的安卓 App（见下文安装包）。
 
 通过 HTTPS（或 `localhost`）访问时会启用 Service Worker：缓存页面脚本、样式和图标以加快打开速度，断网时显示离线提示页。题目、统计等数据始终从服务器读取，不做离线缓存。
 
@@ -206,7 +233,7 @@
 2. **克隆并安装依赖**：
 
    ```bash
-   git clone https://github.com/fr47cwp6kj-dotcom/wrong-notebook.git
+   git clone https://github.com/margrop/wrong-notebook.git
    cd wrong-notebook
    npm ci
    ```
@@ -237,7 +264,7 @@ AI 的 API Key 等也可以在登录后通过网页设置填写，见下文「AI
 
 ### 方式二：Docker 镜像部署（推荐）
 
-每次发版都会把镜像发布到 GitHub Container Registry：`ghcr.io（如自行发布镜像可替换）`，支持 `linux/amd64` 和 `linux/arm64`，可直接拉取，不需要源码。
+每次发版都会把镜像发布到 GitHub Container Registry：`ghcr.io/margrop/wrong-notebook`，支持 `linux/amd64` 和 `linux/arm64`，可直接拉取，不需要源码。
 
 | 镜像标签 | 说明 |
 | --- | --- |
@@ -245,7 +272,7 @@ AI 的 API Key 等也可以在登录后通过网页设置填写，见下文「AI
 | `2026.10` | 当月最新版本 |
 | `latest` | 最新正式版本 |
 
-可用版本见 [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases)。
+可用版本见 [Releases](https://github.com/margrop/wrong-notebook/releases)。
 
 1. **准备目录和密钥**：
 
@@ -267,7 +294,7 @@ AI 的 API Key 等也可以在登录后通过网页设置填写，见下文「AI
      -p 3000:3000 \
      -v "$(pwd)/data:/app/data" \
      -v "$(pwd)/config:/app/config" \
-     ghcr.io（如自行发布镜像可替换）:latest
+     ghcr.io/margrop/wrong-notebook:latest
    ```
 
    使用 Docker Compose：下载仓库中的 [`docker-compose.yml`](docker-compose.yml) 放到当前目录，修改 `NEXTAUTH_SECRET`（及 `NEXTAUTH_URL`）后执行：
@@ -289,7 +316,7 @@ AI 的 API Key 等也可以在登录后通过网页设置填写，见下文「AI
 
 数据保存在挂载的 `data/`（SQLite 数据库）和 `config/`（网页中保存的 AI 配置等）目录。设置页「关于」和 `/api/health` 显示当前运行的版本。HTTPS 部署见 [HTTPS 配置指南](doc/HTTPS_SETUP.md) 和 `docker-compose.https.yml`。
 
-Docker 镜像未发布到公共仓库，请在源码目录执行 `docker build -t wrong-notebook .` 自行构建。
+> 上游项目的镜像 `ghcr.io/wttwins/wrong-notebook` **不包含**本仓库新增的功能，请使用 `ghcr.io/margrop/wrong-notebook`。
 
 ### 方式三：从源码构建镜像
 
@@ -310,7 +337,7 @@ docker run -d --name wrong-notebook \
 
 ### 方式四：安装包（npm / Windows / macOS / Linux / 飞牛OS / 安卓）
 
-不想使用 Docker 时，可以从 [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) 下载桌面版或飞牛OS 安装包，也可以通过 npm 安装：
+不想使用 Docker 时，可以从 [Releases](https://github.com/margrop/wrong-notebook/releases) 下载桌面版或飞牛OS 安装包，也可以通过 npm 安装：
 
 ```bash
 npm install -g wrong-notebook
@@ -326,7 +353,7 @@ wrong-notebook --port 3000
 | 安卓手机 / 平板（单机版） | `WrongNotebook-Android-Phone-<版本>.apk`（竖屏）、`WrongNotebook-Android-Tablet-<版本>.apk`（横竖屏自动旋转） |
 | 安卓手机 / 平板（客户端） | `WrongNotebook-Android-Client-Phone-<版本>.apk`、`WrongNotebook-Android-Client-Tablet-<版本>.apk` |
 
-安卓单机版内置服务端，安装后直接使用，数据保存在本机（卸载 App 会删除数据；数据含 API Key，不参与系统备份，卸载或换机前请在设置中导出备份），首次以默认管理员 `admin@localhost` / `123456` 登录并按提示修改密码；需要 Android 8.0 及以上的 64 位 ARM 设备。客户端版不内置服务端，首次打开时填写已部署的服务器地址（如 `http://你的服务器地址:3000`），可在「设置 → 关于」中更换服务器，需要 Android 7.0 及以上。两种 App 都支持拍照上传、导出文件和系统打印，可以同时安装。
+安卓单机版内置服务端，安装后直接使用，数据保存在本机（卸载 App 会删除数据；数据含 API Key，不参与系统备份，卸载或换机前请在设置中导出备份），首次以默认管理员 `admin@localhost` / `123456` 登录并按提示修改密码；需要 Android 8.0 及以上的 64 位 ARM 设备。客户端版不内置服务端，首次打开时填写已部署的服务器地址（如 `http://192.168.1.10:3000`），可在「设置 → 关于」中更换服务器，需要 Android 7.0 及以上。两种 App 都支持拍照上传、导出文件和系统打印，可以同时安装。
 
 数据目录、默认账号、本地构建方法见 [INSTALL_PACKAGES.md](doc/INSTALL_PACKAGES.md)。
 
@@ -492,7 +519,7 @@ bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构�
 
 ## 📚 文档
 
-使用、部署和常见问题专项文档：
+使用、部署和常见问题见 [Wiki](https://github.com/margrop/wrong-notebook/wiki)（另有 [English](https://github.com/margrop/wrong-notebook/wiki/Home-en) 版）。专项文档：
 
 | 文档 | 内容 |
 | :--- | :--- |
@@ -524,4 +551,4 @@ bash scripts/ci.sh          # 完整 CI（Node.js 22+、Python 3，含生产构�
 
 [MIT License](LICENSE)
 
-© 2026。基于 MIT 许可发布，见 [LICENSE](LICENSE)。
+© 2026 margrop。本项目基于 [wttwins/wrong-notebook](https://github.com/wttwins/wrong-notebook) 扩展，原项目代码版权归原作者所有。

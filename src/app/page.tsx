@@ -115,6 +115,7 @@ function HomeContent() {
                                 <BatchImportPanel
                                     blobs={flow.batchBlobs}
                                     subjectId={initialNotebookId}
+                                    paperImage={flow.paperImage}
                                     timeout={flow.aiTimeout}
                                     onClose={flow.closeBatch}
                                 />

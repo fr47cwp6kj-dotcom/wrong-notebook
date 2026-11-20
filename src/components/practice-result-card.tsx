@@ -9,6 +9,7 @@ import { PracticeResultPicker } from "@/components/practice-result-picker";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import { frontendLogger } from "@/lib/frontend-logger";
+import { practiceEvidence } from "@/lib/practice-evidence";
 import type { PracticeResult } from "@/types/api";
 
 interface PracticeResultCardProps {
@@ -17,12 +18,18 @@ interface PracticeResultCardProps {
     suggested: PracticeResult | null;
     question: { questionText: string; answerText: string; analysis: string; subject?: string; figureSvg?: string | null };
     difficulty: string;
+    independentCorrect: boolean;
+    hintLevel: number;
+    review?: boolean;
+    studentAnswer?: string;
+    revealedAnswer?: boolean;
+    mode?: 'normal' | 'warning' | 'exam';
 }
 
 /** 举一反三结束后由用户确认结果并保存 */
-export function PracticeResultCard({ errorItemId, suggested, question, difficulty }: PracticeResultCardProps) {
+export function PracticeResultCard({ errorItemId, suggested, question, difficulty, independentCorrect, hintLevel, review = false, studentAnswer = '', revealedAnswer = false, mode = 'normal' }: PracticeResultCardProps) {
     const { t } = useLanguage();
-    const [result, setResult] = useState<PracticeResult | null>(suggested);
+    const [result, setResult] = useState<PracticeResult | null>(suggested ?? 'not_attempted');
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -34,7 +41,12 @@ export function PracticeResultCard({ errorItemId, suggested, question, difficult
         try {
             await apiClient.post("/api/practice/record", {
                 errorItemId,
-                result,
+                source: review ? 'review' : 'practice',
+                studentAnswer,
+                revealedAnswer,
+                mode,
+                ...practiceEvidence(suggested, result, independentCorrect, hintLevel),
+                hintLevel,
                 difficulty,
                 subject: question.subject || null,
                 questionText: question.questionText,

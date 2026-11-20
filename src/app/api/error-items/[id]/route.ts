@@ -38,6 +38,7 @@ export async function GET(
             include: {
                 subject: true,
                 tags: true, // 包含标签关联
+                paperImage: true, // 整卷原图
             },
         });
 
@@ -50,7 +51,9 @@ export async function GET(
             return forbidden("Not authorized to access this item");
         }
 
-        return NextResponse.json(errorItem);
+        // 整卷图以平铺字段返回，前端无需感知关联结构
+        const { paperImage, ...rest } = errorItem;
+        return NextResponse.json({ ...rest, paperImageUrl: paperImage?.dataUrl ?? null });
     } catch (error) {
         logger.error({ error }, 'Error fetching item');
         return internalError("Failed to fetch error item");

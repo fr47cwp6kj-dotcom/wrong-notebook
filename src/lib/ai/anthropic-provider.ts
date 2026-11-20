@@ -1,13 +1,15 @@
 import type { GapInput, GapResult } from '../knowledge-gaps';
 import { parseGapResult } from './gap-result';
 import Anthropic from "@anthropic-ai/sdk";
-import { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
-import { generateGapPrompt, generateAnalyzePrompt, generateSimilarQuestionPrompt, generateMasteryPrompt, generateGradingPrompt, generateTagSuggestPrompt, generateReanswerPrompt, generateFigurePrompt, generateSvgAnimationPrompt, generateLatexFixPrompt, SVG_ANIMATION_REQUEST } from './prompts';
-import { sanitizeSvgAnimation } from '../svg-animation';
+import { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, WrongAnswerRecognitionResult } from "./types";
+import type { KnowledgeFocus } from './types';
+import { generateGapPrompt, generateAnalyzePrompt, generateSimilarQuestionPrompt, generateMasteryPrompt, generateGradingPrompt, generateTagSuggestPrompt, generateReanswerPrompt, generateFigurePrompt, generateWrongAnswerPrompt, generateSvgAnimationPrompt, generateLatexFixPrompt, SVG_ANIMATION_REQUEST } from './prompts';
+import { buildSvgAnimationResult } from '../svg-animation';
+import type { SvgAnimationResult } from '../svg-animation';
 import { parseLatexFix } from './latex-fix';
 import type { LatexFixInput, LatexFixResult } from './latex-fix';
 import { getAppConfig } from '../config';
-import { safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseQuestionKnowledgePoints, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
+import { safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseQuestionKnowledgePoints, parseTagSuggestion, parseDifficultyStars, parseFigure, parseWrongAnswerText } from './schema';
 import { prefetchSubjectTags } from './tag-service';
 import { createLogger } from '../logger';
 import { trimTrailingSlashes } from '../utils';
@@ -196,11 +198,12 @@ export class AnthropicProvider implements AIService {
         }
     }
 
-    async generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language: 'zh' | 'en' = 'zh', difficulty: DifficultyLevel = 'medium', gradeSemester?: string | null, originalFigureSvg?: string | null): Promise<ParsedQuestion> {
+    async generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language: 'zh' | 'en' = 'zh', difficulty: DifficultyLevel = 'medium', gradeSemester?: string | null, originalFigureSvg?: string | null, knowledgeFocus?: KnowledgeFocus): Promise<ParsedQuestion> {
         const config = getAppConfig();
         const systemPrompt = generateSimilarQuestionPrompt(language, originalQuestion, knowledgePoints, difficulty, {
             customTemplate: config.prompts?.similar,
             originalFigureSvg,
+            knowledgeFocus,
         }, gradeSemester);
         const userPrompt = `\nOriginal Question: "${originalQuestion}"\nKnowledge Points: ${knowledgePoints.join(", ")}\n    `;
 
@@ -326,6 +329,23 @@ export class AnthropicProvider implements AIService {
         }
     }
 
+    async recognizeWrongAnswer(imageBase64: string, mimeType?: string, questionText?: string | null): Promise<WrongAnswerRecognitionResult> {
+        logger.info({ provider: 'Anthropic', model: this.model, imageSize: imageBase64.length }, 'Wrong answer recognition Request');
+
+        try {
+            const text = await this.complete(generateWrongAnswerPrompt(questionText), [
+                imageBlock(imageBase64, mimeType || 'image/jpeg'),
+                { type: 'text', text: '请摘录图中的学生手写作答。' },
+            ], 4096);
+            logger.debug({ rawResponse: text }, 'Wrong answer recognition AI raw response');
+            return { wrongAnswerText: parseWrongAnswerText(extractTag(text, "wrong_answer_text")) };
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during wrong answer recognition');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
     async fixLatex(input: LatexFixInput): Promise<LatexFixResult> {
         logger.info({ provider: 'Anthropic', model: this.model, fields: Object.keys(input) }, 'LaTeX Fix Request');
 
@@ -340,13 +360,13 @@ export class AnthropicProvider implements AIService {
         }
     }
 
-    async generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language: 'zh' | 'en' = 'zh'): Promise<string | null> {
+    async generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language: 'zh' | 'en' = 'zh'): Promise<SvgAnimationResult | null> {
         logger.info({ provider: 'Anthropic', model: this.model, questionLength: questionText.length }, 'SVG Animation Request');
 
         try {
             const text = await this.complete(generateSvgAnimationPrompt(questionText, answerText, analysis, figureSvg, language), SVG_ANIMATION_REQUEST[language], 16384);
             logger.debug({ rawResponse: text }, 'SVG animation AI raw response');
-            return sanitizeSvgAnimation(extractTag(text, "svg_animation") || text);
+            return buildSvgAnimationResult(extractTag(text, "svg_animation") || text, extractTag(text, "animation_steps"));
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during SVG animation generation');
             this.handleError(error);

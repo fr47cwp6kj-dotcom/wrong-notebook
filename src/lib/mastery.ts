@@ -16,8 +16,9 @@ export function isPracticeResult(value: unknown): value is PracticeResult {
     return typeof value === 'string' && (PRACTICE_RESULTS as readonly string[]).includes(value);
 }
 
-// 做对时按难度给分：难度越高越能说明掌握
+// 做对时按难度给分：难度越高越能说明掌握；用提示后答对折算，不算完全独立通过
 const CORRECT_SCORE: Record<string, number> = { easy: 0.85, medium: 0.95, hard: 1, harder: 1 };
+const HINTED_CORRECT_SCORE = 0.6;
 const RESULT_SCORE: Record<Exclude<PracticeResult, 'correct'>, number> = { wrong: 0.1, not_attempted: 0 };
 // 每往前一次，权重乘以该系数
 const RECENCY_DECAY = 0.7;
@@ -26,9 +27,10 @@ const PRIOR = 0.3;
 const PRIOR_WEIGHT = 0.5;
 
 /**
- * 规则公式估算掌握概率（0~1），记录按时间从早到晚排列；无记录返回 null
+ * 规则公式估算掌握概率（0~1），记录按时间从早到晚排列；无记录返回 null。
+ * 用提示后答对（hintUsed）的得分打折。
  */
-export function computeRuleMastery(history: Pick<MasteryHistoryEntry, 'result' | 'difficulty'>[]): number | null {
+export function computeRuleMastery(history: Array<Pick<MasteryHistoryEntry, 'result' | 'difficulty'> & { hintUsed?: boolean | null }>): number | null {
     if (history.length === 0) {
         return null;
     }
@@ -36,9 +38,13 @@ export function computeRuleMastery(history: Pick<MasteryHistoryEntry, 'result' |
     let weightTotal = PRIOR_WEIGHT;
     history.forEach((entry, index) => {
         const weight = Math.pow(RECENCY_DECAY, history.length - 1 - index);
-        const score = entry.result === 'correct'
-            ? CORRECT_SCORE[entry.difficulty || 'medium'] ?? CORRECT_SCORE.medium
-            : RESULT_SCORE[entry.result];
+        let score: number;
+        if (entry.result === 'correct') {
+            score = CORRECT_SCORE[entry.difficulty || 'medium'] ?? CORRECT_SCORE.medium;
+            if (entry.hintUsed) score = HINTED_CORRECT_SCORE;
+        } else {
+            score = RESULT_SCORE[entry.result];
+        }
         weightedSum += weight * score;
         weightTotal += weight;
     });
@@ -48,6 +54,52 @@ export function computeRuleMastery(history: Pick<MasteryHistoryEntry, 'result' |
 /** 有举一反三记录时的 masteryLevel：1 复习中，2 已掌握 */
 export function masteryLevelFor(probability: number): number {
     return masteryLevelOf(probability >= MASTERY_THRESHOLD ? 'mastered' : 'reviewing');
+}
+
+/** 掌握确认还差的条件（界面据此提示下一步） */
+export type MasteryMissingCondition = 'cross_context_correct' | 'review_verification';
+
+export interface MasteryConfirmation {
+    level: number;
+    missing: MasteryMissingCondition[];
+}
+
+/** 判断一次答对是否算独立通过：用提示后答对不计数 */
+function isIndependentCorrect(entry: Pick<MasteryHistoryEntry, 'result'> & { hintUsed?: boolean | null }): boolean {
+    return entry.result === 'correct' && !entry.hintUsed;
+}
+
+/**
+ * 掌握确认规则：概率达标只是必要条件，还需
+ * 1) 至少两次独立答对（用提示后答对不算）且来自至少两个不同情境（不同日期或不同来源）；
+ * 2) 存在一次已完成的复习计划，且其后仍有独立答对（后续复习验证）。
+ * 满足 1 未满足 2 时保持复习中并提示「等待后续复习验证」。
+ */
+export function confirmMasteryLevel(
+    probability: number,
+    history: Array<Pick<MasteryHistoryEntry, 'result' | 'difficulty' | 'source'> & { hintUsed?: boolean | null; createdAt?: Date | string; questionText?: string | null }>,
+    completedReviews: Array<Date | string> = [],
+): MasteryConfirmation {
+    const missing: MasteryMissingCondition[] = [];
+    if (probability < MASTERY_THRESHOLD) return { level: masteryLevelOf('reviewing'), missing: ['cross_context_correct', 'review_verification'] };
+
+    const correctEvents = history.filter(isIndependentCorrect);
+    // 同一题隔天或换来源再做仍是同一情境；缺失题目快照的旧记录不提供跨题证据。
+    const contexts = new Set(correctEvents
+        .map((entry) => entry.questionText?.normalize('NFKC').replace(/\s+/g, ' ').trim())
+        .filter((question): question is string => Boolean(question))).size;
+    if (correctEvents.length < 2 || contexts < 2) missing.push('cross_context_correct');
+
+    // 后续复习验证：已完成的复习之后仍有独立答对
+    const lastReview = completedReviews
+        .map((value) => new Date(value).getTime())
+        .filter((time) => Number.isFinite(time))
+        .sort((a, b) => b - a)[0];
+    const verifiedAfterReview = lastReview !== undefined
+        && correctEvents.some((entry) => entry.createdAt && new Date(entry.createdAt).getTime() > lastReview);
+    if (!verifiedAfterReview) missing.push('review_verification');
+
+    return { level: missing.length === 0 ? masteryLevelOf('mastered') : masteryLevelOf('reviewing'), missing };
 }
 
 /**
@@ -64,7 +116,11 @@ export async function evaluateErrorItemMastery(errorItemId: string): Promise<voi
             practiceRecords: {
                 where: { result: { not: null } },
                 orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-                select: { result: true, difficulty: true, source: true, createdAt: true },
+                select: { result: true, difficulty: true, source: true, createdAt: true, hintUsed: true, questionText: true },
+            },
+            reviewSchedules: {
+                where: { completedAt: { not: null } },
+                select: { completedAt: true },
             },
         },
     });
@@ -72,13 +128,16 @@ export async function evaluateErrorItemMastery(errorItemId: string): Promise<voi
         return;
     }
 
-    const history: MasteryHistoryEntry[] = item.practiceRecords
+    const history = item.practiceRecords
         .filter((record) => isPracticeResult(record.result))
         .map((record) => ({
             date: record.createdAt.toISOString(),
             difficulty: record.difficulty,
             result: record.result as PracticeResult,
             source: record.source,
+            hintUsed: record.hintUsed,
+            questionText: record.questionText,
+            createdAt: record.createdAt,
         }));
 
     const ruleProbability = computeRuleMastery(history);
@@ -98,7 +157,7 @@ export async function evaluateErrorItemMastery(errorItemId: string): Promise<voi
             questionText: item.questionText || '',
             knowledgePoints: item.tags.map((tag) => tag.name),
             mistakeStatus: item.mistakeStatus,
-            history,
+            history: history.map(({ date, difficulty, result, source: entrySource }) => ({ date, difficulty, result, source: entrySource })),
             ruleProbability,
         });
         probability = result.probability;
@@ -110,6 +169,18 @@ export async function evaluateErrorItemMastery(errorItemId: string): Promise<voi
         reason = `共练习 ${history.length} 次，做对 ${correct} 次（规则估算）`;
     }
 
+    // 概率达标只是必要条件；跨题独立作答与后续复习验证都通过才确认已掌握
+    const completedReviews = (item.reviewSchedules ?? [])
+        .map((schedule) => schedule.completedAt)
+        .filter((value): value is Date => value !== null);
+    const confirmation = confirmMasteryLevel(probability, history, completedReviews);
+    if (confirmation.missing.length > 0) {
+        const pending = confirmation.missing
+            .map((condition) => condition === 'cross_context_correct' ? '还需在不同题目情境中独立答对' : '等待后续复习验证')
+            .join('；');
+        reason = `${reason}（${pending}）`;
+    }
+
     await prisma.errorItem.update({
         where: { id: item.id },
         data: {
@@ -117,10 +188,10 @@ export async function evaluateErrorItemMastery(errorItemId: string): Promise<voi
             masteryReason: reason,
             masterySource: source,
             masteryEvaluatedAt: new Date(),
-            masteryLevel: masteryLevelFor(probability),
+            masteryLevel: confirmation.level,
         },
     });
-    logger.info({ errorItemId, probability, source }, 'Mastery evaluated');
+    logger.info({ errorItemId, probability, source, level: confirmation.level, missing: confirmation.missing }, 'Mastery evaluated');
 }
 
 /** 按复习状态统计错题数量 */

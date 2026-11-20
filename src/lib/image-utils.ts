@@ -77,8 +77,71 @@ export async function compressImage(
     });
 }
 
+/** 识别环节的最小图片宽度：低于此值视觉模型容易误读小图（多题框选的裁剪图常见） */
+const MIN_ANALYZE_WIDTH = 1200;
+/** 放大倍数上限，避免把极小图放大到失真 */
+const MAX_UPSCALE_FACTOR = 4;
+
+function readFileAsDataURL(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = src;
+    });
+}
+
 /**
- * 检查并压缩图片（如果需要）
+ * 放大过小的图片：宽度低于 MIN_ANALYZE_WIDTH 时按倍率放大后再送 AI，降低视觉模型误读率
+ * @returns 放大后的 Base64；图片足够大、canvas 不可用或解码失败时返回 null（调用方回退原图）
+ */
+async function upscaleSmallImage(file: File): Promise<string | null> {
+    // canvas 不可用（如测试环境）时直接跳过
+    const probe = document.createElement('canvas');
+    if (!probe.getContext('2d')) return null;
+
+    try {
+        const dataUrl = await readFileAsDataURL(file);
+        const img = await loadImageElement(dataUrl);
+        if (img.naturalWidth <= 0 || img.naturalWidth >= MIN_ANALYZE_WIDTH) return null;
+
+        const factor = Math.min(MIN_ANALYZE_WIDTH / img.naturalWidth, MAX_UPSCALE_FACTOR);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * factor);
+        canvas.height = Math.round(img.naturalHeight * factor);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        // 白底避免透明 PNG 转 JPEG 时变黑
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const upscaled = canvas.toDataURL('image/jpeg', 0.92);
+        frontendLogger.info('[ImageCompress]', 'Small image upscaled for AI', {
+            original: `${img.naturalWidth}x${img.naturalHeight}`,
+            upscaled: `${canvas.width}x${canvas.height}`,
+        }, { sendToBackend: false });
+        return upscaled;
+    } catch {
+        // 放大失败时回退原图，不阻断识别流程
+        return null;
+    }
+}
+
+/**
+ * 检查并压缩图片（如果需要）；过小的图片先放大再送 AI
  * @param file 图片文件
  * @returns Base64 字符串
  */
@@ -92,14 +155,13 @@ export async function processImageFile(file: File): Promise<string> {
     if (fileSizeMB > threshold) {
         frontendLogger.info('[ImageCompress]', 'File exceeds threshold, compressing', undefined, { sendToBackend: false });
         return await compressImage(file, threshold);
-    } else {
-        frontendLogger.info('[ImageCompress]', 'File size OK, no compression needed', undefined, { sendToBackend: false });
-        // 直接返回 Base64
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
     }
+
+    frontendLogger.info('[ImageCompress]', 'File size OK, no compression needed', undefined, { sendToBackend: false });
+    // 小图先放大，避免视觉模型误读
+    const upscaled = await upscaleSmallImage(file);
+    if (upscaled) return upscaled;
+
+    // 直接返回 Base64
+    return readFileAsDataURL(file);
 }

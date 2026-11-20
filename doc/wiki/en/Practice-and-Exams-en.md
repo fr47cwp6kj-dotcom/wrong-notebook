@@ -4,7 +4,15 @@
 
 Open similar-question practice from a question's detail page and choose a difficulty; the AI generates a variant testing the same knowledge points. Generated questions are fill-in-the-blank or free-response, and the question text should not carry a question number, score or multiple-choice options.
 
+When the source question has a confirmed, current knowledge-gap diagnosis, generation also receives its gap type, trigger rule, applicability boundary, unused condition, and first stuck step. Output must include a question, answer, and explanation; mathematical correctness still needs further verification.
+
 Answer on your own first, then view the answer and analysis and record whether you got it right. Records are linked to the original question for reviewing practice history and evaluating mastery.
+
+A confirmed, current knowledge-gap diagnosis provides progressive hints: unused condition, trigger rule, and first stuck step. The highest hint level is saved. Correct answers after hints, or self-reported correct answers after revealing the full answer, do not count as independent passes.
+
+For knowledge-unit drills, enter an answer before revealing the reference solution; the answer is then locked for that attempt. Earlier drill records without evidence of answering first remain in history but do not count as independent cross-question passes.
+
+The knowledge-gap report initially shows only the latest "where it went wrong" step. Continue to "why" and "what to practice," or expand the full evidence. The knowledge-unit page shows pending, initial pass, cross-question verification, temporary mastery, and stable mastery. A boundary contrast and later review provide evidence for the final two stages.
 
 Answers are checked when you submit. If your answer matches the reference answer (ignoring spaces, formula delimiters and prefixes like "The answer is"; for multiple choice only the option letters are compared), it is marked correct right away. Otherwise the AI compares it with the reference answer and analysis and gives a one-line reason. Equivalent forms (such as `1/2` and `0.5`) count as correct; giving only some of several answers counts as wrong. If the AI check fails, you choose the result yourself. The check is only a suggestion and can be changed before saving.
 
@@ -15,10 +23,10 @@ Each question keeps the most recently generated variant and its solution. Reopen
 Mastery probability is estimated from the actual answer history linked to the original question, including similar-question practice, exam answers and repeated imports.
 
 - AI evaluation is used first; if the AI call fails, a rule-based estimate is used and the source is recorded.
-- A question's status is decided automatically by its answer records and mastery probability, not marked manually:
+- A question's status is decided automatically by its answer records, independent cross-question success, and review verification, not marked manually:
   - **To review**: no similar-question records yet.
   - **Reviewing**: has records and a mastery probability below 50% (also used while a new record is still being evaluated).
-  - **Mastered**: has records and a mastery probability of at least 50%.
+  - **Mastered**: mastery probability is at least 50%, the student answered at least two different practice questions correctly without hints, and answered correctly again after a completed review. Repeating the same question on another day does not add a new context.
 - Notebooks can be filtered by these three statuses; the "not mastered" scope of random exam papers covers both to review and reviewing.
 - Without usable answer records, the mastery probability is empty.
 - Evaluation runs in the background, so after recording results you may need to wait or refresh to see the update.

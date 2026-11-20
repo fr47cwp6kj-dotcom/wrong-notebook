@@ -17,7 +17,7 @@ export const GapCandidateSchema = z.object({
     evidenceQuote: requiredText,
     questionsToStudent: z.array(requiredText).min(1).max(3),
     minimalPractice: z.array(z.object({
-        type: z.enum(['trigger_recognition', 'unit_drill']),
+        type: z.enum(['trigger_recognition', 'unit_drill', 'boundary_contrast']),
         question: requiredText,
         answer: requiredText,
         explanation: requiredText,
@@ -39,6 +39,7 @@ export interface GapInput {
     subject: string;
     language: 'zh' | 'en';
     units: Array<{ name: string; triggerRule: string; boundary: string }>;
+    dialogue?: Array<{ question: string; answer: string; mode: 'text' | 'option' | 'unknown' }>;
 }
 export const normalizeGapText = (value: string) => value.normalize('NFKC').replace(/\s+/g, ' ').trim();
 
@@ -54,16 +55,23 @@ export interface GapView {
     source: string;
     stale: boolean;
     practiceReviewed: boolean;
+    merged?: boolean;
     unitId: string;
     candidate: GapCandidate;
     events: Array<{ id: string; practiceIndex: number; answer: string; result: string; createdAt: string }>;
+    followups?: Array<{ source: string; question?: string; answer?: string; hypothesis?: string; nextQuestion?: string }>;
 }
 
 /** 同一原题反复答对不视为迁移掌握；必须在至少两个题目情境中连续通过。 */
-export function summarizeUnitEvents(events: Array<{ result: string; errorItemId: string; createdAt: Date | string }>) {
+export function summarizeUnitEvents(events: Array<{ result: string; errorItemId: string; createdAt: Date | string; independent?: boolean; practiceType?: string }>, completedReviews: Array<Date | string> = []) {
     const sorted = [...events].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     const streak: typeof sorted = [];
-    for (let i = sorted.length - 1; i >= 0 && sorted[i].result === 'correct'; i--) streak.push(sorted[i]);
+    for (let i = sorted.length - 1; i >= 0 && sorted[i].result === 'correct' && sorted[i].independent === true; i--) streak.push(sorted[i]);
     const contexts = new Set(streak.map(event => event.errorItemId)).size;
-    return { attempts: sorted.length, correct: sorted.filter(event => event.result === 'correct').length, contexts, mastered: contexts >= 2 && streak.length >= 2 };
+    const boundaryVerified = streak.some(event => event.practiceType === 'boundary_contrast');
+    const reviewTime = Math.max(0, ...completedReviews.map(value => new Date(value).getTime()).filter(Number.isFinite));
+    const reviewVerified = reviewTime > 0 && streak.some(event => new Date(event.createdAt).getTime() > reviewTime);
+    const stage = contexts === 0 ? 'pending' : contexts === 1 ? 'preliminary'
+        : !boundaryVerified ? 'cross_context' : reviewVerified ? 'stable' : 'temporary';
+    return { attempts: sorted.length, correct: sorted.filter(event => event.result === 'correct').length, contexts, stage, mastered: stage === 'temporary' || stage === 'stable' };
 }

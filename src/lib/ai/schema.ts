@@ -177,6 +177,15 @@ export interface FigureResult {
 }
 
 /**
+ * 解析 AI 输出的 <wrong_answer_text>：「无」或空白视为未识别到手写作答
+ */
+export function parseWrongAnswerText(raw: string | null | undefined): string {
+    const text = raw?.trim() ?? '';
+    if (!text || text === '无') return '';
+    return text;
+}
+
+/**
  * 解析 AI 输出的 <has_figure> 与 <figure_svg>：SVG 经净化，无效时为空；
  * 画出了有效配图时视为有配图
  */

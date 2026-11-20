@@ -1,0 +1,1 @@
+ALTER TABLE "PracticeRecord" ADD COLUMN "hintLevel" INTEGER NOT NULL DEFAULT 0;

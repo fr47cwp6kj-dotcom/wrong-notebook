@@ -20,6 +20,7 @@ import { frontendLogger } from "@/lib/frontend-logger";
 import type { LastPractice } from "@/lib/last-practice";
 import { matchAnswer } from "@/lib/answer-match";
 import { getApiErrorMessage } from "@/lib/error-message";
+import type { GapView } from "@/lib/knowledge-gaps";
 
 export const dynamic = 'force-dynamic';
 
@@ -27,12 +28,15 @@ function PracticeContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const errorItemId = searchParams.get("id");
+    const [practiceMode, setPracticeMode] = useState<'normal' | 'warning' | 'exam'>(
+        searchParams.get('mode') === 'warning' ? 'warning' : searchParams.get('mode') === 'exam' ? 'exam' : 'normal');
     const { t, language } = useLanguage();
     usePageTitle(t.practice.title);
 
     const [question, setQuestion] = useState<ParsedQuestion | null>(null);
     const [loading, setLoading] = useState(false);
     const [showAnswer, setShowAnswer] = useState(false);
+    const [revealedAnswer, setRevealedAnswer] = useState(false);
     const [userAnswer, setUserAnswer] = useState("");
     const [notes, setNotes] = useState("");
     const [isSubmitted, setIsSubmitted] = useState(false);
@@ -49,6 +53,23 @@ function PracticeContent() {
     // 当前题目的生成时间；读取暂存题目期间不显示生成按钮，避免闪烁
     const [generatedAt, setGeneratedAt] = useState<string | null>(null);
     const [loadingCached, setLoadingCached] = useState(true);
+    const [hintLevel, setHintLevel] = useState(0);
+    const [practiceHints, setPracticeHints] = useState<string[]>([]);
+    const [riskWarning, setRiskWarning] = useState('');
+
+    useEffect(() => {
+        if (!errorItemId) return;
+        let cancelled = false;
+        apiClient.get<{ diagnoses: GapView[] }>(`/api/error-items/${encodeURIComponent(errorItemId)}/knowledge-gaps`)
+            .then(({ diagnoses }) => {
+                if (cancelled) return;
+                const candidate = diagnoses.find(d => d.status === 'confirmed' && !d.stale)?.candidate;
+                setPracticeHints(candidate ? [candidate.unusedSignal, candidate.triggerRule, candidate.firstStuckStep].filter(Boolean) : []);
+                setRiskWarning(candidate?.unusedSignal || candidate?.boundary || '');
+            })
+            .catch(() => { if (!cancelled) setPracticeHints([]); });
+        return () => { cancelled = true; };
+    }, [errorItemId]);
 
     useEffect(() => {
         apiClient.get<AppConfig>("/api/settings")
@@ -111,6 +132,8 @@ function PracticeContent() {
         setGradeReason(null);
         setGradeFailed(false);
         setShowAnswer(false);
+        setRevealedAnswer(false);
+        setHintLevel(0);
         try {
             const timeout = config?.timeouts?.analyze || 180000;
             frontendLogger.info('[Practice]', 'Generating question', {
@@ -120,6 +143,7 @@ function PracticeContent() {
                 errorItemId,
                 language,
                 difficulty
+                , mode: practiceMode
             }, { timeout });
             setQuestion(data);
             setGeneratedDifficulty(difficulty);
@@ -139,6 +163,12 @@ function PracticeContent() {
                 errorMessage = t.errors?.aiAuth || errorMessage;
             } else if (msg.includes('AI_OUTPUT_TRUNCATED')) {
                 errorMessage = t.errors?.AI_OUTPUT_TRUNCATED || errorMessage;
+            } else if (msg.includes('AI_QUESTION_INVALID')) {
+                errorMessage = t.errors?.AI_QUESTION_INVALID || errorMessage;
+            } else if (msg.includes('AI_QUESTION_WRONG_ANSWER')) {
+                errorMessage = t.errors?.AI_QUESTION_WRONG_ANSWER || errorMessage;
+            } else if (msg.includes('AI_QUESTION_REVIEW_FAILED')) {
+                errorMessage = t.errors?.AI_QUESTION_REVIEW_FAILED || errorMessage;
             } else if (msg.includes('AI_UNKNOWN_ERROR')) {
                 errorMessage = t.errors?.AI_UNKNOWN_ERROR || errorMessage;
             }
@@ -154,6 +184,7 @@ function PracticeContent() {
         if (!userAnswer.trim() || !question || !errorItemId) return;
 
         setIsSubmitted(true);
+        setRevealedAnswer(false);
         if (matchAnswer(userAnswer, question.answerText)) {
             setIsCorrect(true);
             setShowAnswer(true);
@@ -182,6 +213,7 @@ function PracticeContent() {
     // 不作答直接看答案，由用户自己判定结果
     const revealAnswer = () => {
         setIsSubmitted(true);
+        setRevealedAnswer(true);
         setIsCorrect(null);
         setShowAnswer(true);
     };
@@ -205,6 +237,12 @@ function PracticeContent() {
                 <p className="text-muted-foreground">
                     {t.practice.subtitle}
                 </p>
+                <div className="flex flex-wrap justify-center gap-2">{(['normal', 'warning', 'exam'] as const).map(mode =>
+                    <Button key={mode} size="sm" variant={practiceMode === mode ? 'default' : 'outline'}
+                        disabled={Boolean(question)} onClick={() => setPracticeMode(mode)}>
+                        {mode === 'normal' ? t.practice.modeNormal : mode === 'warning' ? t.practice.modeWarning : t.practice.modeExam}
+                    </Button>)}</div>
+                {practiceMode === 'warning' && riskWarning && <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{t.practice.riskWarning.replace('{signal}', riskWarning)}</p>}
 
                 {error && (
                     <div className="relative rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-destructive" role="alert">
@@ -338,6 +376,13 @@ function PracticeContent() {
                     </Card>
 
                     {/* Submit/Result Section */}
+                    {!isSubmitted && practiceMode !== 'exam' && practiceHints.length > 0 && <div className="space-y-2 rounded-lg border p-4">
+                        <p className="text-sm font-medium">{t.practice.progressiveHints}</p>
+                        {practiceHints.slice(0, hintLevel).map((hint, index) => <p key={index} className="text-sm">{index + 1}. {hint}</p>)}
+                        {hintLevel < practiceHints.length && <Button variant="outline" onClick={() => setHintLevel(level => level + 1)}>
+                            {t.practice.nextHint.replace('{level}', String(hintLevel + 1))}
+                        </Button>}
+                    </div>}
                     {!isSubmitted ? (
                         <div className="flex flex-col sm:flex-row justify-center gap-2">
                             <Button
@@ -353,6 +398,7 @@ function PracticeContent() {
                                 size="lg"
                                 variant="outline"
                                 onClick={revealAnswer}
+                                disabled={practiceMode !== 'exam' && practiceHints.length > 0 && hintLevel < practiceHints.length}
                                 className="w-full md:w-auto"
                             >
                                 <Eye className="mr-2 h-4 w-4" />
@@ -423,6 +469,12 @@ function PracticeContent() {
                                 suggested={suggestedResult}
                                 question={question}
                                 difficulty={generatedDifficulty}
+                                independentCorrect={isCorrect === true && Boolean(userAnswer.trim())}
+                                hintLevel={hintLevel}
+                                review={searchParams.get('review') === '1'}
+                                studentAnswer={userAnswer}
+                                revealedAnswer={revealedAnswer}
+                                mode={practiceMode}
                             />
                             <Card className="bg-muted/50">
                                 <CardHeader>

@@ -1,5 +1,9 @@
 # 部署与升级
 
+本地错因 Agent 复刻版支持独立正式版启动：固定 HTTPS 网址通过穿透客户端连接 `127.0.0.1:3334`，复用当前账号和数据库。先配置域名与 `CUOYIN_PUBLIC_URL`，再运行 `启动错因Agent正式版.command`。完整步骤见仓库 [doc/REMOTE_ACCESS.md](../REMOTE_ACCESS.md)。
+
+cpolar 用户可预留固定二级域名，设置匹配的 `subdomain` 和 `region`，再用 `启动错因Agent外网.command` 启动穿透。目标为 `127.0.0.1:3334` 时同时启动本机正式版；目标为 NAS 时直接使用 NAS 原账号和数据库，并只在本机运行隧道。仅本机正式版需要对应的 `CUOYIN_PUBLIC_URL`。自定义域名仍需对应线路要求的 DNS 与证书配置；令牌只保存在被忽略的私有配置中。
+
 官方镜像为 `ghcr.io/margrop/wrong-notebook`，支持 `linux/amd64` 和 `linux/arm64`。上游 `ghcr.io/wttwins/wrong-notebook` 镜像不包含本仓库新增的功能。
 
 ## 选择镜像版本

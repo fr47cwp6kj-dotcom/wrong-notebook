@@ -47,11 +47,11 @@ export async function analyzeQuestionImage(
 }
 
 /**
- * 将识别结果直接保存为错题；未指定错题本时由服务端按学科匹配或新建错题本
+ * 将识别结果（可含校对修改）保存为错题；未指定错题本时由服务端按学科匹配或新建错题本
  */
 export async function saveParsedQuestion(
-    parsed: ParsedQuestion,
-    options: { subjectId?: string | null; imageUrl?: string | null }
+    parsed: ParsedQuestion & { gradeSemester?: string; paperLevel?: string; geogebraCommands?: string },
+    options: { subjectId?: string | null; imageUrl?: string | null; paperImageUrl?: string | null }
 ): Promise<ImportedQuestion> {
     const created = await apiClient.post<CreatedErrorItem>("/api/error-items", {
         questionText: parsed.questionText,
@@ -65,9 +65,13 @@ export async function saveParsedQuestion(
         difficultyStars: parsed.difficultyStars ?? null,
         hasFigure: parsed.hasFigure ?? false,
         figureSvg: parsed.figureSvg ?? null,
+        gradeSemester: parsed.gradeSemester ?? null,
+        paperLevel: parsed.paperLevel ?? null,
+        geogebraCommands: parsed.geogebraCommands ?? null,
         subjectId: options.subjectId || undefined,
         subjectName: options.subjectId ? undefined : parsed.subject,
         originalImageUrl: options.imageUrl || "",
+        paperImageUrl: options.paperImageUrl || undefined,
     });
     return {
         id: created.id,
@@ -78,14 +82,20 @@ export async function saveParsedQuestion(
     };
 }
 
-/** 压缩、识别并保存一张题目图片（批量导入时每个框调用一次） */
-export async function importQuestionImage(
+/** analyzeQuestionOnly 的返回值：识别所用图片与 AI 解析结果 */
+export interface AnalyzedQuestion {
+    imageBase64: string;
+    parsed: ParsedQuestion;
+}
+
+/**
+ * 压缩（含小图放大）并识别一张题目图片，不保存（批量导入校对流程第一步）
+ */
+export async function analyzeQuestionOnly(
     file: Blob,
-    options: { language: 'zh' | 'en'; subjectId?: string | null; timeout?: number; onStage?: (stage: 'analyzing' | 'saving') => void }
-): Promise<ImportedQuestion> {
+    options: { language: 'zh' | 'en'; subjectId?: string | null; timeout?: number }
+): Promise<AnalyzedQuestion> {
     const imageBase64 = await processImageFile(file instanceof File ? file : new File([file], "question.jpg", { type: file.type || "image/jpeg" }));
-    options.onStage?.('analyzing');
     const parsed = await analyzeQuestionImage(imageBase64, options);
-    options.onStage?.('saving');
-    return saveParsedQuestion(parsed, { subjectId: options.subjectId, imageUrl: imageBase64 });
+    return { imageBase64, parsed };
 }

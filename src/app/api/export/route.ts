@@ -54,6 +54,18 @@ export async function GET(req: Request) {
             },
         });
 
+        // 整卷原图独立导出，错题通过 paperImageId 引用
+        const paperImages = await prisma.paperImage.findMany({
+            where: userFilter,
+            select: {
+                id: true,
+                userId: true,
+                hash: true,
+                dataUrl: true,
+                createdAt: true,
+            },
+        });
+
         const reviewSchedules = await prisma.reviewSchedule.findMany({
             where: exportAll
                 ? { errorItem: { userId: { not: undefined } } }
@@ -62,6 +74,10 @@ export async function GET(req: Request) {
 
         const practiceRecords = await prisma.practiceRecord.findMany({
             where: userFilter,
+        });
+        const learningEvents = await prisma.learningEvent.findMany({
+            where: userFilter,
+            include: { unit: { select: { stage: true, subject: true, unitKey: true } } },
         });
 
         const examPapers = await prisma.examPaper.findMany({
@@ -90,8 +106,10 @@ export async function GET(req: Request) {
             subjects,
             customTags,
             errorItems,
+            paperImages,
             reviewSchedules,
             practiceRecords,
+            learningEvents,
             examPapers,
         };
 
@@ -101,8 +119,10 @@ export async function GET(req: Request) {
             subjectsCount: subjects.length,
             customTagsCount: customTags.length,
             errorItemsCount: errorItems.length,
+            paperImagesCount: paperImages.length,
             reviewSchedulesCount: reviewSchedules.length,
             practiceRecordsCount: practiceRecords.length,
+            learningEventsCount: learningEvents.length,
             examPapersCount: examPapers.length,
         }, 'Data export completed');
 

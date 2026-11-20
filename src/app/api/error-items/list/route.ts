@@ -164,7 +164,7 @@ export async function GET(req: Request) {
         return NextResponse.json({
             items: errorItems.map(({ _count, ...item }) => ({
                 ...item,
-                masteryStatus: masteryStatusOf(_count.practiceRecords, item.masteryProbability),
+                masteryStatus: masteryStatusOf(_count.practiceRecords, item.masteryProbability, item.masteryLevel),
             })),
             total,
             page,

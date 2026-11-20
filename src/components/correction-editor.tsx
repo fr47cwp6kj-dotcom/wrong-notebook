@@ -5,6 +5,7 @@ import { Loader2, Save } from "lucide-react";
 import { MetaFields } from "@/components/correction-editor/meta-fields";
 import { ContentPanel } from "@/components/correction-editor/content-panel";
 import { TagFields } from "@/components/correction-editor/tag-fields";
+import { ImageViewer } from "@/components/image-viewer";
 import { QuestionFigure } from "@/components/question-figure";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -125,41 +126,54 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
 
     const notebook = notebooks.find(n => n.id === data.subjectId);
     const tagSubject = notebook?.subjectKey || inferSubjectFromName(notebook?.name || null) || inferSubjectFromName(data.subject || null) || undefined;
+    const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+    // 有原图或配图时右侧常驻图片栏，校对时可图文对照
+    const hasImagePanel = !!(imagePreview || data.figureSvg);
 
     return (
-        <div className="mx-auto max-w-5xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold">{t.editor.title}</h2>
-                <div className="flex gap-2">
-                    <Button variant="outline" onClick={onCancel}>
-                        {t.editor.cancel}
-                    </Button>
-                    <Button onClick={handleSave} disabled={isSaving}>
-                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                        {isSaving ? (t.common?.pleaseWait || "Please wait...") : t.editor.save}
-                    </Button>
+        <div className={`mx-auto max-w-5xl ${hasImagePanel ? "lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-6" : ""}`}>
+            <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-2xl font-bold">{t.editor.title}</h2>
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={onCancel}>
+                            {t.editor.cancel}
+                        </Button>
+                        <Button onClick={handleSave} disabled={isSaving}>
+                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            {isSaving ? (t.common?.pleaseWait || "Please wait...") : t.editor.save}
+                        </Button>
+                    </div>
                 </div>
-            </div>
 
-            <div className="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
-                <MetaFields data={data} paperLevel={paperLevel} onChange={update} />
-            </div>
+                <div className="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <MetaFields data={data} paperLevel={paperLevel} onChange={update} />
+                </div>
 
-            <ContentPanel data={data} onChange={update} onReanswer={handleReanswer} isReanswering={isReanswering} />
+                <ContentPanel data={data} onChange={update} onReanswer={handleReanswer} isReanswering={isReanswering} />
 
-            <div className="space-y-3">
-                {(imagePreview || data.figureSvg) && (
-                    <details className="rounded-lg border bg-card p-4">
-                        <summary className="cursor-pointer text-sm font-medium">{t.editor.grouping.images}</summary>
-                        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                            {imagePreview && <img src={imagePreview} alt={t.editor.grouping.images} className="max-h-96 w-full rounded-md object-contain" />}
-                            <QuestionFigure svg={data.figureSvg} />
-                        </div>
-                    </details>
-                )}
                 <TagFields data={data} onChange={update} subject={tagSubject} gradeStage={notebook?.stage || educationStage} />
-
             </div>
+
+                {hasImagePanel && (
+                    <aside className="mt-4 space-y-4 rounded-xl border bg-card p-4 lg:mt-0 lg:sticky lg:top-4">
+                        <h3 className="text-sm font-medium">{t.editor.grouping.images}</h3>
+                        {imagePreview && (
+                            <figure className="space-y-1">
+                                <img
+                                    src={imagePreview}
+                                    alt={t.editor.grouping.images}
+                                    className="max-h-[45vh] w-full cursor-zoom-in rounded-md border bg-muted object-contain"
+                                    onClick={() => setEnlargedImage(imagePreview)}
+                                />
+                                <figcaption className="text-center text-xs text-muted-foreground">{t.detail?.clickToEnlarge || "Click to enlarge"}</figcaption>
+                            </figure>
+                        )}
+                        <QuestionFigure svg={data.figureSvg} />
+                    </aside>
+                )}
+
+            <ImageViewer src={enlargedImage} onClose={() => setEnlargedImage(null)} />
         </div>
     );
 }

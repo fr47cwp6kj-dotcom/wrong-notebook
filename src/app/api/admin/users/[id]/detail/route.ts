@@ -106,6 +106,8 @@ export async function GET(
                 questionText: true,
                 ocrText: true,
                 masteryProbability: true,
+
+                masteryLevel: true,
                 createdAt: true,
                 _count: PRACTICE_RECORD_COUNT,
                 subject: {
@@ -133,7 +135,7 @@ export async function GET(
                 id: item.id,
                 questionText: item.questionText,
                 ocrText: item.ocrText,
-                masteryStatus: masteryStatusOf(item._count.practiceRecords, item.masteryProbability),
+                masteryStatus: masteryStatusOf(item._count.practiceRecords, item.masteryProbability, item.masteryLevel),
                 createdAt: item.createdAt,
                 subject: item.subject,
             })),

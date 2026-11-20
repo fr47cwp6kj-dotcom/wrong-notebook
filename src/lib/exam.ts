@@ -7,6 +7,12 @@ import { masteryStatusWhere } from "@/lib/mastery-status";
 import { startBackgroundTask, trackBackgroundTask } from "@/lib/background-tasks";
 import { resolveNotebookScope, SUBJECT_DISPLAY_NAMES } from "@/lib/notebook-scope";
 import type { BackgroundTaskHandle } from "@/lib/background-tasks";
+import { questionContextKey, recordLearningEvent } from "@/lib/learning-events";
+import { summarizeLearningEvidence } from "@/lib/learning-events";
+import { GapCandidateSchema } from "@/lib/knowledge-gaps";
+import { gapDigest } from "@/lib/knowledge-gap-store";
+import type { KnowledgeFocus } from "@/lib/ai/types";
+import { generateAuditedQuestion } from "@/lib/ai/question-audit";
 
 const logger = createLogger('exam');
 
@@ -39,7 +45,7 @@ export function buildSourceWhere(userId: string, selection: ExamSelection): Pris
     };
     // 未掌握包括待复习和复习中
     if (selection.scope === 'unmastered') {
-        where.NOT = masteryStatusWhere('mastered');
+        where.OR = [{ NOT: masteryStatusWhere('mastered') }, { gapDiagnoses: { some: { status: 'confirmed' } } }];
     } else if (selection.scope === 'mastered') {
         where.AND = [masteryStatusWhere('mastered')];
     }
@@ -70,12 +76,18 @@ export function pickLeastPracticed<T extends { practiceCount: number }>(items: T
 export async function selectSourceItems(userId: string, selection: ExamSelection) {
     const candidates = await prisma.errorItem.findMany({
         where: buildSourceWhere(userId, selection),
-        select: { id: true, shortId: true, _count: { select: { practiceRecords: true } } },
+        select: { id: true, shortId: true, _count: { select: { practiceRecords: true } },
+            gapDiagnoses: { where: { status: 'confirmed' }, select: { unit: { select: { learningEvents: true } } } } },
     });
-    const items = candidates.map(({ _count, ...item }) => ({ ...item, practiceCount: _count.practiceRecords }));
+    const items = candidates.map(({ _count, gapDiagnoses, ...item }) => {
+        const stages = (gapDiagnoses ?? []).map(d => summarizeLearningEvidence(d.unit.learningEvents ?? []).stage);
+        const priority = stages.some(stage => stage === 'pending' || stage === 'preliminary' || stage === 'cross_context') ? 0
+            : stages.some(stage => stage === 'temporary') ? 1 : stages.length ? 3 : 2;
+        return { ...item, practiceCount: _count.practiceRecords, priority };
+    });
     return (selection.pickRule ?? DEFAULT_EXAM_PICK_RULE) === 'random'
         ? sampleItems(items, selection.count)
-        : pickLeastPracticed(items, selection.count);
+        : sampleItems(items, items.length).sort((a, b) => a.priority - b.priority || a.practiceCount - b.practiceCount).slice(0, selection.count);
 }
 
 /** 根据原题全部生成完成情况得出试卷状态 */
@@ -103,7 +115,7 @@ async function generateQuestion(questionId: string, difficulty: DifficultyLevel,
         where: { id: questionId },
         select: {
             errorItem: {
-                select: { questionText: true, knowledgePoints: true, gradeSemester: true, figureSvg: true, tags: { select: { name: true } } },
+                include: { subject: true, gapDiagnoses: { where: { status: 'confirmed' }, orderBy: { createdAt: 'desc' }, take: 5 }, tags: { select: { name: true } } },
             },
         },
     });
@@ -113,13 +125,33 @@ async function generateQuestion(questionId: string, difficulty: DifficultyLevel,
     }
 
     try {
-        const generated = await getAIService().generateSimilarQuestion(
-            question.errorItem.questionText || '',
-            parseTagNames(question.errorItem),
+        const source = question.errorItem;
+        const current = (source.gapDiagnoses ?? []).find(d => d.sourceDigest === gapDigest(source));
+        let focus: KnowledgeFocus | undefined;
+        if (current) {
+            try {
+                const parsed = GapCandidateSchema.safeParse(JSON.parse(current.payload));
+                if (parsed.success) {
+                    const { gapType, triggerRule, boundary, unusedSignal, firstStuckStep } = parsed.data;
+                    focus = { gapType, triggerRule, boundary, unusedSignal, firstStuckStep };
+                }
+            } catch { /* 损坏的旧诊断不参与出题 */ }
+        }
+        const service = getAIService();
+        const generated = await generateAuditedQuestion(
+            service,
+            source.questionText || '',
             language,
-            difficulty,
-            question.errorItem.gradeSemester,
-            question.errorItem.figureSvg
+            source.subject?.name ?? null,
+            () => service.generateSimilarQuestion(
+                source.questionText || '',
+                parseTagNames(source),
+                language,
+                difficulty,
+                source.gradeSemester,
+                source.figureSvg,
+                focus
+            ),
         );
         await prisma.examQuestion.update({
             where: { id: questionId },
@@ -250,13 +282,20 @@ export async function regenerateExamQuestion(
         const source = question.errorItem;
         if (!source) throw new Error('SOURCE_DELETED');
 
-        const generated = await trackBackgroundTask({ ...task, kind: 'exam' }, () => getAIService().generateSimilarQuestion(
+        const service = getAIService();
+        const generated = await trackBackgroundTask({ ...task, kind: 'exam' }, () => generateAuditedQuestion(
+            service,
             source.questionText || '',
-            parseTagNames(source),
             language,
-            question.paper.difficulty as DifficultyLevel,
-            source.gradeSemester,
-            source.figureSvg
+            source.subject?.name ?? null,
+            () => service.generateSimilarQuestion(
+                source.questionText || '',
+                parseTagNames(source),
+                language,
+                question.paper.difficulty as DifficultyLevel,
+                source.gradeSemester,
+                source.figureSvg
+            ),
         ));
         // AI 生成耗时较长，期间可能已录入结果，写入时再次确认
         const { count } = await prisma.examQuestion.updateMany({
@@ -342,7 +381,7 @@ export async function recordExamResults(paperId: string, userId: string, takenAt
             // 原题已删除的题目无法计入举一反三记录
             if (!question?.errorItemId || result === null) continue;
 
-            await tx.practiceRecord.create({
+            const record = await tx.practiceRecord.create({
                 data: {
                     userId,
                     errorItemId: question.errorItemId,
@@ -359,6 +398,23 @@ export async function recordExamResults(paperId: string, userId: string, takenAt
                     figureSvg: question.figureSvg,
                 },
             });
+            // 旧测试桩可能只提供练习记录模型；真实 Prisma 事务始终包含以下模型。
+            if (!('gapDiagnosis' in tx) || !('learningEvent' in tx)) {
+                affected.add(question.errorItemId);
+                continue;
+            }
+            const diagnoses = await tx.gapDiagnosis.findMany({
+                where: { errorItemId: question.errorItemId, status: 'confirmed', unit: { userId } },
+                select: { unitId: true },
+            });
+            for (const unitId of new Set(diagnoses.map(d => d.unitId))) {
+                await recordLearningEvent(tx, {
+                    userId, unitId, requestId: `exam:${record.id}:${unitId}`, kind: 'answer', source: 'student',
+                    errorItemId: question.errorItemId, questionKey: questionContextKey(question.questionText || ''),
+                    result, independent: false, createdAt: takenAt,
+                    payload: { examQuestionId: question.id, practiceRecordId: record.id },
+                });
+            }
             affected.add(question.errorItemId);
         }
         if (affected.size > 0) {

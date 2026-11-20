@@ -16,10 +16,12 @@ interface ToggleImageProps {
     variant?: "outline" | "ghost";
     /** 与显示按钮并排的其他按钮 */
     actions?: ReactNode;
+    /** 覆盖图片默认样式（如并排布局时限制高度） */
+    imgClassName?: string;
 }
 
 /** 默认折叠的图片：点击按钮显示，点击图片放大 */
-export function ToggleImage({ src, alt, showLabel, hideLabel, visible, onVisibleChange, onEnlarge, variant = "ghost", actions }: ToggleImageProps) {
+export function ToggleImage({ src, alt, showLabel, hideLabel, visible, onVisibleChange, onEnlarge, variant = "ghost", actions, imgClassName }: ToggleImageProps) {
     const { t } = useLanguage();
 
     return (
@@ -34,7 +36,7 @@ export function ToggleImage({ src, alt, showLabel, hideLabel, visible, onVisible
             </div>
             {src && visible && (
                 <div className="mt-4">
-                    <img src={src} alt={alt} className="w-full rounded-lg border cursor-pointer hover:opacity-90 transition-opacity" onClick={() => onEnlarge(src)} />
+                    <img src={src} alt={alt} className={`w-full rounded-lg border cursor-pointer hover:opacity-90 transition-opacity ${imgClassName ?? ""}`} onClick={() => onEnlarge(src)} />
                     <p className="text-xs text-muted-foreground mt-1 text-center">{t.detail?.clickToEnlarge || "Click to enlarge"}</p>
                 </div>
             )}

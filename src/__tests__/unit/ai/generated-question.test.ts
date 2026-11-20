@@ -19,6 +19,17 @@ describe('生成填空题或解答题', () => {
         }
     });
 
+    it('知识单元靶向出题保留规则、边界和卡点', () => {
+        const prompt = generateSimilarQuestionPrompt('zh', '原题', [], 'medium', {
+            knowledgeFocus: { gapType: 'condition_signal_missed', triggerRule: '看到 A 想到 B', boundary: '只有 C 时适用', unusedSignal: '条件 A', firstStuckStep: '先检查 C' },
+        });
+        expect(prompt).toContain('看到 A 想到 B');
+        expect(prompt).toContain('只有 C 时适用');
+        expect(prompt).toContain('条件 A');
+        expect(prompt).toContain('先检查 C');
+        expect(prompt).toContain('新情境题');
+    });
+
     it.each(['第 3 题（5 分）求 2 + 2 的值。', '3. 求 2 + 2 的值。（5分）', 'Question 3: [5 marks] 求 2 + 2 的值。'])('去掉生成题目中的题号和分值：%s', (text) => {
         const result = normalizeGeneratedQuestion(question(text));
         expect(result.questionText).toBe('求 2 + 2 的值。');
@@ -27,6 +38,11 @@ describe('生成填空题或解答题', () => {
 
     it.each(['求和。\nA. 2\nB. 4\nC. 6\nD. 8', '下列正确的是 A. 2 B. 4', '请选择：\n（A）2\n（B）4'])('拒绝带选项的输出，避免直接删除选项造成题目缺条件', (text) => {
         expect(() => normalizeGeneratedQuestion(question(text))).toThrow('AI_RESPONSE_ERROR');
+    });
+
+    it('拒绝缺失答案或解析的题目', () => {
+        expect(() => normalizeGeneratedQuestion({ ...question('求 2 + 2'), answerText: ' ' })).toThrow('AI_RESPONSE_ERROR');
+        expect(() => normalizeGeneratedQuestion({ ...question('求 2 + 2'), analysis: ' ' })).toThrow('AI_RESPONSE_ERROR');
     });
 
     it.each(['1.5 千克糖分成 3 份，每份多少千克？', '三角形 ABC 中，A、B、C 为顶点，求角 A 的度数。', '求点 A. 的坐标。'])('保留题目的小数和几何字母：%s', (text) => {

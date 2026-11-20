@@ -9,7 +9,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { apiClient } from '@/lib/api-client';
 import { usePageTitle } from '@/lib/page-title';
 
-interface Unit { id: string; name: string; stage: string; subject: string; triggerRule: string; boundary: string; attempts: number; contexts: number; mastered: boolean; questions: Array<{ id: string; shortId: string | null; text: string }> }
+interface Unit { id: string; name: string; stage: string; subject: string; triggerRule: string; boundary: string; attempts: number; contexts: number; verificationStage: 'pending' | 'preliminary' | 'cross_context' | 'temporary' | 'stable'; mastered: boolean; questions: Array<{ id: string; shortId: string | null; text: string }>; confusable: Array<{ id: string; name: string; triggerRule: string; boundary: string }> }
 export default function KnowledgeUnitsPage() {
     const { t } = useLanguage();
     usePageTitle(t.gaps.library);
@@ -30,9 +30,12 @@ export default function KnowledgeUnitsPage() {
         {loading && <p>{t.common.loading}</p>}
         {error && <div role="alert">{t.gaps.failed}<Button variant="ghost" onClick={load}>{t.gaps.reload}</Button></div>}
         {!loading && !error && !units.length && <p>{t.gaps.noUnits}</p>}
-        <div className="grid gap-4 md:grid-cols-2">{units.map(unit => <Card key={unit.id}><CardHeader><CardTitle className="text-lg">{unit.name}</CardTitle><Badge className="w-fit" variant="outline">{unit.mastered ? t.gaps.verified : t.gaps.consolidating}</Badge></CardHeader><CardContent className="space-y-3">
+        <div className="grid gap-4 md:grid-cols-2">{units.map(unit => <Card key={unit.id}><CardHeader><CardTitle className="text-lg">{unit.name}</CardTitle><Badge className="w-fit" variant="outline">{t.gaps.verificationStages[unit.verificationStage]}</Badge></CardHeader><CardContent className="space-y-3">
             <p className="font-medium">{unit.triggerRule}</p><p className="text-sm text-muted-foreground">{unit.boundary}</p>
             <p className="text-sm">{t.gaps.attempts}：{unit.attempts} · {t.gaps.contexts}：{unit.contexts}</p>
+            {unit.confusable.length > 0 && <div className="space-y-2 rounded border p-3 text-sm"><h3 className="font-medium">{t.gaps.confusable}</h3>
+                {unit.confusable.map(other => <div key={other.id}><p className="font-medium">{other.name}</p><p>{other.triggerRule}</p><p className="text-muted-foreground">{other.boundary}</p></div>)}
+            </div>}
             <h3 className="text-sm font-medium">{t.gaps.questions}</h3><ul className="space-y-2 text-sm">{unit.questions.map(question => <li key={question.id}><Link className="text-primary underline underline-offset-4" href={`/error-items/${question.id}#knowledge-gaps`}>{question.shortId || '↗'} · {question.text}</Link></li>)}</ul>
         </CardContent></Card>)}</div>
     </main>;

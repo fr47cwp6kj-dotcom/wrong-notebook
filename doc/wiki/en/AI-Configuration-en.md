@@ -29,6 +29,8 @@ The default names come from the current code and do not mean these models are en
 
 For OpenAI-compatible services, the base URL should include the API path they require. For Anthropic-compatible services, the base URL excludes `/v1`; the app appends `/v1/messages`. The official MiniMax, GLM, DeepSeek and Kimi channels are called through the OpenAI-compatible API; leaving the endpoint and model empty uses the official defaults. Fill in the international endpoint if you use an international site.
 
+Image recognition with `glm-5.3-flash` on the official Zhipu endpoints uses low reasoning effort to reduce truncation and retries caused by lengthy reasoning.
+
 ## MiniMax Code OAuth
 
 MiniMax Code OAuth calls models after you sign in with a MiniMax Code account, so no API key is needed:
@@ -86,3 +88,5 @@ Knowledge points are chosen from the tag library matching the notebook's school 
 API keys are stored in the server configuration. Keep backups of `config/` safe, and only share redacted configuration, logs and error messages when reporting problems.
 
 Code entry points: [configuration](https://github.com/margrop/wrong-notebook/blob/main/src/lib/config.ts) · [provider selection](https://github.com/margrop/wrong-notebook/blob/main/src/lib/ai/index.ts) · [prompts](https://github.com/margrop/wrong-notebook/blob/main/src/lib/ai/prompts.ts).
+
+This fork scopes all math tag suggestions to the Zhejiang edition, Grade 8, first semester, with prerequisite skills; other subjects retain their notebook stage scope. See [scope and limitations](../../MATH_CURRICULUM.md).

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkTunnel, hasToken, withCertificate, withToken } from '../../../scripts/cpolar-config.mjs';
+import { checkTunnel, getTunnelTarget, hasToken, withCertificate, withToken } from '../../../scripts/cpolar-config.mjs';
 
 const token = 'test-token-only-1234567890';
 
@@ -36,7 +36,7 @@ describe('cpolar 本机配置', () => {
         expect(result).toBe(`authtoken: "${token}"\nregion: hk\n`);
     });
     it('设置或更新证书路径时保留其他隧道设置', () => {
-        const config = 'tunnels:\n  cuoyin:\n    proto: http\n    addr: 127.0.0.1:3334\n    hostname: example.test\n    bind_tls: true\n';
+        const config = 'tunnels:\n  cuoyin:\n    proto: http\n    addr: 127.0.0.1:3334\n    hostname: shaochenyue.asia\n    bind_tls: true\n';
         const first = withCertificate(config, '/private/domain.crt', '/private/domain.key');
         const updated = withCertificate(first, '/private/renewed.crt', '/private/renewed.key');
         expect(updated).toContain('    bind_tls: true\n');
@@ -63,5 +63,16 @@ describe('cpolar 本机配置', () => {
         } finally {
             rmSync(tunnel.directory, { recursive: true, force: true });
         }
+    });
+    it('已预留的 cpolar 二级域名无需自备证书', () => {
+        const config = withToken('region: cn_vip_top\ntunnels:\n  cuoyin:\n    proto: http\n    addr: 127.0.0.1:3334\n    subdomain: cuoyinagent\n', token);
+        expect(() => checkTunnel(config)).not.toThrow();
+        expect(() => checkTunnel(config.replace('cn_vip_top', 'hk'))).toThrow('地区');
+        expect(() => checkTunnel(config.replace('cuoyinagent', 'bad domain'))).toThrow('二级域名');
+    });
+    it('读取隧道目标以区分本机和群晖服务', () => {
+        expect(getTunnelTarget('tunnels:\n  cuoyin:\n    addr: 127.0.0.1:3334\n')).toBe('127.0.0.1:3334');
+        expect(getTunnelTarget('tunnels:\n  cuoyin:\n    addr: DS220plus.local:39301\n')).toBe('DS220plus.local:39301');
+        expect(() => getTunnelTarget('tunnels:\n  cuoyin:\n    addr: invalid\n')).toThrow('本地地址');
     });
 });

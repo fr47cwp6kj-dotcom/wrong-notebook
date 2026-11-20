@@ -81,7 +81,7 @@ export default function ReviewPage() {
                                 <span>
                                     {dueLabel(item)} · {t.review.round.replace("{round}", String(item.reviewStage + 1)).replace("{total}", String(REVIEW_INTERVALS.length))}
                                 </span>
-                                <Link href={`/practice?id=${item.id}`}>
+                                <Link href={`/practice?id=${item.id}&review=1`}>
                                     <Button variant="outline" size="sm" className="h-8">
                                         <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                                         {t.review.practice}

@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/logger";
 import { PRACTICE_RECORD_COUNT, masteryStatusOf } from "@/lib/mastery-status";
 import { prisma } from "@/lib/prisma";
 import { getReviewPlan, isReviewDue } from "@/lib/review-schedule";
+import { summarizeLearningEvidence } from "@/lib/learning-events";
 
 const logger = createLogger('api:review:due');
 
@@ -32,14 +33,25 @@ export async function GET(req: Request) {
             select: {
                 id: true,
                 createdAt: true,
+                masteryLevel: true,
                 practiceRecords: { where: { result: { not: null } }, select: { result: true, createdAt: true } },
+                gapDiagnoses: { where: { status: 'confirmed' }, select: { unit: { select: { learningEvents: true } } } },
             },
         });
 
         const due = candidates
-            .map((item) => ({ id: item.id, plan: getReviewPlan(item.createdAt, item.practiceRecords, timeZone) }))
-            .filter(({ plan }) => isReviewDue(plan, timeZone, now))
-            .sort((a, b) => a.plan.nextReviewAt!.getTime() - b.plan.nextReviewAt!.getTime());
+            .map((item) => {
+                const stages = item.gapDiagnoses.map(d => summarizeLearningEvidence(d.unit.learningEvents).stage);
+                const priority = stages.some(stage => ['pending', 'preliminary', 'cross_context'].includes(stage)) ? 0
+                    : stages.some(stage => stage === 'temporary') ? 1 : stages.length ? 3 : 2;
+                const latestStable = item.gapDiagnoses.flatMap(d => d.unit.learningEvents)
+                    .filter(event => event.kind === 'review' && event.result === 'correct' && event.independent)
+                    .reduce((latest, event) => Math.max(latest, event.createdAt.getTime()), 0);
+                return { id: item.id, plan: getReviewPlan(item.createdAt, item.practiceRecords, timeZone), priority,
+                    stableCooldown: priority === 3 && latestStable > 0 && now.getTime() - latestStable < 30 * 24 * 60 * 60 * 1000 };
+            })
+            .filter(({ plan, stableCooldown }) => !stableCooldown && isReviewDue(plan, timeZone, now))
+            .sort((a, b) => a.priority - b.priority || a.plan.nextReviewAt!.getTime() - b.plan.nextReviewAt!.getTime());
 
         const pageEntries = due.slice((page - 1) * pageSize, page * pageSize);
         const items = await prisma.errorItem.findMany({
@@ -59,7 +71,7 @@ export async function GET(req: Request) {
                 const { _count, ...item } = found;
                 return [{
                     ...item,
-                    masteryStatus: masteryStatusOf(_count.practiceRecords, item.masteryProbability),
+                    masteryStatus: masteryStatusOf(_count.practiceRecords, item.masteryProbability, item.masteryLevel),
                     reviewStage: plan.stage,
                     nextReviewAt: plan.nextReviewAt,
                 }];

@@ -1,5 +1,9 @@
 # Deployment and Upgrades
 
+The local Cuoyin Agent fork includes a separate production launcher for a fixed HTTPS tunnel. Forward the configured tunnel to `127.0.0.1:3334`, set `CUOYIN_PUBLIC_URL`, and run `启动错因Agent正式版.command`. It reuses the current accounts and database. See [doc/REMOTE_ACCESS.md](../../REMOTE_ACCESS.md) for setup and updates.
+
+For cpolar, reserve a fixed subdomain and set matching `subdomain` and `region` values, then use `启动错因Agent外网.command` to start the tunnel. A target of `127.0.0.1:3334` also starts local production; a NAS target uses the existing NAS accounts and database and starts only the tunnel on the Mac. Set `CUOYIN_PUBLIC_URL` for local production. A custom hostname still requires the corresponding DNS and certificate setup. `配置cpolar账号.command` stores the token in ignored private configuration with hidden terminal input.
+
 The official image is `ghcr.io/margrop/wrong-notebook`, built for `linux/amd64` and `linux/arm64`. The upstream `ghcr.io/wttwins/wrong-notebook` image does not include the features added in this repository.
 
 ## Choose an image tag

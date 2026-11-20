@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize, Minimize, Pause, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { buildSvgAnimationDocument, getSvgAnimationDuration, getSvgAspectRatio } from "@/lib/svg-animation";
+import { buildSvgAnimationDocument, getSvgAnimationDuration, getSvgAspectRatio, parseSvgAnimationSteps } from "@/lib/svg-animation";
+import type { SvgAnimationStep } from "@/lib/svg-animation";
 import { cn } from "@/lib/utils";
 
 interface SvgAnimationPlayerProps {
     svg: string;
+    /** 分步时间轴（JSON），点击步骤跳到该步开始处播放；为空时不显示步骤条 */
+    stepsJson?: string | null;
 }
 
 function formatTime(seconds: number): string {
@@ -22,7 +25,7 @@ function formatTime(seconds: number): string {
  * SVG 放在不允许脚本的 sandbox iframe 中（仅 allow-same-origin，便于本页调用 SMIL 时间轴接口），
  * 其中的脚本和事件属性都不会执行。
  */
-export function SvgAnimationPlayer({ svg }: SvgAnimationPlayerProps) {
+export function SvgAnimationPlayer({ svg, stepsJson }: SvgAnimationPlayerProps) {
     const { t } = useLanguage();
     const containerRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -32,6 +35,17 @@ export function SvgAnimationPlayer({ svg }: SvgAnimationPlayerProps) {
     const [nativeFullscreen, setNativeFullscreen] = useState(false);
     const [overlayFullscreen, setOverlayFullscreen] = useState(false);
     const fullscreen = nativeFullscreen || overlayFullscreen;
+
+    const steps = useMemo<SvgAnimationStep[]>(() => parseSvgAnimationSteps(stepsJson), [stepsJson]);
+    // 当前播放到的时间落在哪一步（取开始时间不晚于当前的最后一步）
+    const activeStepIndex = useMemo(() => {
+        if (steps.length === 0) return -1;
+        let active = 0;
+        for (let i = 0; i < steps.length; i++) {
+            if (steps[i].begin <= current + 0.05) active = i;
+        }
+        return active;
+    }, [steps, current]);
 
     const duration = useMemo(() => getSvgAnimationDuration(svg), [svg]);
     const aspectRatio = useMemo(() => getSvgAspectRatio(svg), [svg]);
@@ -152,6 +166,24 @@ export function SvgAnimationPlayer({ svg }: SvgAnimationPlayerProps) {
                     ? { aspectRatio, width: `min(100%, calc((100dvh - 96px) * ${aspectRatio}))` }
                     : { aspectRatio }}
             />
+            {steps.length > 0 && (
+                <div className={cn("mx-auto flex w-full flex-wrap items-center gap-1.5", fullscreen ? "max-w-5xl" : "max-w-3xl")}>
+                    <span className={cn("mr-1 shrink-0 text-xs", fullscreen ? "text-white/70" : "text-muted-foreground")}>{t.svgAnimation.stepsLabel}</span>
+                    {steps.map((step, index) => (
+                        <Button
+                            key={step.index}
+                            variant={index === activeStepIndex ? "default" : "outline"}
+                            size="sm"
+                            className={cn("h-7 gap-1.5 px-2.5 text-xs", fullscreen && index !== activeStepIndex && "border-white/40 bg-transparent text-white hover:bg-white/20")}
+                            onClick={() => { seek(step.begin); play(); }}
+                            aria-label={`${t.svgAnimation.stepJump.replace("{index}", String(step.index))} ${step.title}`}
+                        >
+                            <span className="tabular-nums opacity-70">{step.index}</span>
+                            <span>{step.title}</span>
+                        </Button>
+                    ))}
+                </div>
+            )}
             <div className={cn("mx-auto flex w-full items-center gap-2", fullscreen ? "max-w-5xl text-white" : "max-w-3xl")}>
                 <Button
                     variant="outline"

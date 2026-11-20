@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
         findUnique: vi.fn(),
         delete: vi.fn(),
     },
+    mockPrismaGapDiagnosis: { findMany: vi.fn() },
     getCurrentUser: vi.fn(),
     scheduleMasteryEvaluation: vi.fn(),
     mockAIService: {
@@ -35,6 +36,7 @@ vi.mock('@/lib/prisma', () => ({
     prisma: {
         errorItem: mocks.mockPrismaErrorItem,
         practiceRecord: mocks.mockPrismaPracticeRecord,
+        gapDiagnosis: mocks.mockPrismaGapDiagnosis,
     },
 }));
 
@@ -65,10 +67,13 @@ import { POST as RECORD_POST } from '@/app/api/practice/record/route';
 import { DELETE as RECORD_DELETE } from '@/app/api/practice/record/[id]/route';
 import { getServerSession } from 'next-auth';
 import type { Session } from 'next-auth';
+import { gapDigest } from '@/lib/knowledge-gap-store';
+import { gapFixture } from '../fixtures/knowledge-gap';
 
 describe('/api/practice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.mockPrismaGapDiagnosis.findMany.mockResolvedValue([]);
         vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession);
     });
 
@@ -125,8 +130,12 @@ describe('/api/practice', () => {
             id: 'error-item-1',
             userId: 'user-123',
             questionText: '求解 x + 2 = 5',
+            wrongAnswerText: 'x = 7',
+            answerText: 'x = 3',
+            analysis: '移项',
+            gradeSemester: null,
             knowledgePoints: '["一元一次方程", "移项"]',
-            subject: { id: 'math', name: '数学' },
+            subject: { id: 'math', name: '数学', stage: 'junior_high', subjectKey: 'math' },
         };
 
         it('应该成功生成类似题目', async () => {
@@ -158,6 +167,21 @@ describe('/api/practice', () => {
             expect(data.subject).toBe('数学');
             expect(data.difficulty).toBe('medium');
             expect(typeof data.generatedAt).toBe('string');
+        });
+
+        it('已确认且未过期的诊断作为靶向出题依据', async () => {
+            mocks.mockPrismaErrorItem.findUnique.mockResolvedValue(mockErrorItem);
+            mocks.mockPrismaGapDiagnosis.findMany.mockResolvedValue([{
+                id: 'diagnosis-1', sourceDigest: gapDigest(mockErrorItem), payload: JSON.stringify(gapFixture),
+            }]);
+            mocks.mockAIService.generateSimilarQuestion.mockResolvedValue({ questionText: '新题', answerText: '答案', analysis: '解析' });
+            const response = await GENERATE_POST(new Request('http://localhost/api/practice/generate', {
+                method: 'POST', body: JSON.stringify({ errorItemId: 'error-item-1', language: 'zh' }),
+            }));
+            expect(response.status).toBe(200);
+            expect(mocks.mockAIService.generateSimilarQuestion.mock.calls[0][6]).toMatchObject({
+                triggerRule: gapFixture.triggerRule, boundary: gapFixture.boundary, gapType: gapFixture.gapType,
+            });
         });
 
         it('应该暂存最近一次生成的题目与解答', async () => {
@@ -268,8 +292,9 @@ describe('/api/practice', () => {
                 expect.any(Array),
                 'zh',
                 'medium', // 默认难度
-                undefined,
-                undefined // 原题无配图
+                null,
+                undefined, // 原题无配图
+                undefined // 无已确认知识单元
             );
         });
 
@@ -317,8 +342,9 @@ describe('/api/practice', () => {
                 ['一元一次方程', '移项'], // 解析后的标签数组
                 'zh',
                 'medium',
-                undefined,
-                undefined // 原题无配图
+                null,
+                undefined, // 原题无配图
+                undefined // 无已确认知识单元
             );
         });
 
@@ -368,8 +394,9 @@ describe('/api/practice', () => {
                 [], // 空数组
                 'zh',
                 'medium',
-                undefined,
-                undefined // 原题无配图
+                null,
+                undefined, // 原题无配图
+                undefined // 无已确认知识单元
             );
         });
 

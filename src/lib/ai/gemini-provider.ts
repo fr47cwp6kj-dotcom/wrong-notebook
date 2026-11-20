@@ -1,12 +1,14 @@
 import type { GapInput, GapResult } from '../knowledge-gaps';
 import { parseGapResult } from './gap-result';
 import { GoogleGenAI } from "@google/genai";
-import { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult } from "./types";
-import { generateGapPrompt, generateAnalyzePrompt, generateSimilarQuestionPrompt, generateMasteryPrompt, generateGradingPrompt, generateTagSuggestPrompt, generateFigurePrompt, generateSvgAnimationPrompt, generateLatexFixPrompt, SVG_ANIMATION_REQUEST } from './prompts';
-import { sanitizeSvgAnimation } from '../svg-animation';
+import { AIService, GradeLevel, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, MasteryEvaluationInput, MasteryEvaluationResult, AnswerGradingInput, AnswerGradingResult, TagSuggestionInput, TagSuggestionResult, CandidateTags, FigureResult, WrongAnswerRecognitionResult } from "./types";
+import type { KnowledgeFocus } from './types';
+import { generateGapPrompt, generateAnalyzePrompt, generateSimilarQuestionPrompt, generateMasteryPrompt, generateGradingPrompt, generateTagSuggestPrompt, generateFigurePrompt, generateWrongAnswerPrompt, generateSvgAnimationPrompt, generateLatexFixPrompt, SVG_ANIMATION_REQUEST } from './prompts';
+import { buildSvgAnimationResult } from '../svg-animation';
+import type { SvgAnimationResult } from '../svg-animation';
 import { parseLatexFix } from './latex-fix';
 import type { LatexFixInput, LatexFixResult } from './latex-fix';
-import { safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseQuestionKnowledgePoints, parseTagSuggestion, parseDifficultyStars, parseFigure } from './schema';
+import { safeParseParsedQuestion, parseMasteryEvaluation, parseAnswerGrading, normalizeSubject, parseQuestionKnowledgePoints, parseTagSuggestion, parseDifficultyStars, parseFigure, parseWrongAnswerText } from './schema';
 import { getAppConfig } from '../config';
 import { prefetchSubjectTags } from './tag-service';
 import { createLogger } from '../logger';
@@ -249,11 +251,12 @@ export class GeminiProvider implements AIService {
         }
     }
 
-    async generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language: 'zh' | 'en' = 'zh', difficulty: DifficultyLevel = 'medium', gradeSemester?: string | null, originalFigureSvg?: string | null): Promise<ParsedQuestion> {
+    async generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language: 'zh' | 'en' = 'zh', difficulty: DifficultyLevel = 'medium', gradeSemester?: string | null, originalFigureSvg?: string | null, knowledgeFocus?: KnowledgeFocus): Promise<ParsedQuestion> {
         const config = getAppConfig();
         const prompt = generateSimilarQuestionPrompt(language, originalQuestion, knowledgePoints, difficulty, {
             customTemplate: config.prompts?.similar,
             originalFigureSvg,
+            knowledgeFocus,
         }, gradeSemester);
 
         logger.box('🎯 Generate Similar Question Request', {
@@ -473,6 +476,31 @@ export class GeminiProvider implements AIService {
         }
     }
 
+    async recognizeWrongAnswer(imageBase64: string, mimeType?: string, questionText?: string | null): Promise<WrongAnswerRecognitionResult> {
+        const prompt = generateWrongAnswerPrompt(questionText);
+        logger.info({ provider: 'Gemini', model: this.modelName, imageSize: imageBase64.length }, 'Wrong answer recognition Request');
+
+        try {
+            const response = await this.retryOperation(() => this.ai.models.generateContent({
+                model: this.modelName,
+                contents: [
+                    { text: prompt },
+                    { inlineData: { data: imageBase64, mimeType: mimeType || 'image/jpeg' } },
+                ],
+            }));
+
+            const text = response.text || '';
+            logger.debug({ rawResponse: text }, 'Wrong answer recognition AI raw response');
+
+            if (!text) throw new Error(response.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? AI_OUTPUT_TRUNCATED : "Empty response from AI");
+            return { wrongAnswerText: parseWrongAnswerText(this.extractTag(text, "wrong_answer_text")) };
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during wrong answer recognition');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
     async fixLatex(input: LatexFixInput): Promise<LatexFixResult> {
         const prompt = generateLatexFixPrompt(input);
         logger.info({ provider: 'Gemini', model: this.modelName, fields: Object.keys(input) }, 'LaTeX Fix Request');
@@ -495,7 +523,7 @@ export class GeminiProvider implements AIService {
         }
     }
 
-    async generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language: 'zh' | 'en' = 'zh'): Promise<string | null> {
+    async generateSvgAnimation(questionText: string, answerText: string, analysis: string, figureSvg?: string | null, language: 'zh' | 'en' = 'zh'): Promise<SvgAnimationResult | null> {
         const prompt = generateSvgAnimationPrompt(questionText, answerText, analysis, figureSvg, language);
         logger.info({ provider: 'Gemini', model: this.modelName, questionLength: questionText.length }, 'SVG Animation Request');
 
@@ -509,7 +537,7 @@ export class GeminiProvider implements AIService {
             logger.debug({ rawResponse: text }, 'SVG animation AI raw response');
 
             if (!text) throw new Error(response.candidates?.[0]?.finishReason === 'MAX_TOKENS' ? AI_OUTPUT_TRUNCATED : "Empty response from AI");
-            return sanitizeSvgAnimation(this.extractTag(text, "svg_animation") || text);
+            return buildSvgAnimationResult(this.extractTag(text, "svg_animation") || text, this.extractTag(text, "animation_steps"));
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during SVG animation generation');
             this.handleError(error);

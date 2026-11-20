@@ -20,6 +20,7 @@ export function KnowledgeGapPanel({ errorItemId }: { errorItemId: string }) {
     const [reviewed, setReviewed] = useState(false);
     const [manual, setManual] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [showAll, setShowAll] = useState(false);
     const endpoint = `/api/error-items/${errorItemId}/knowledge-gaps`;
     const load = useCallback(async () => {
         const data = await apiClient.get<{ diagnoses: GapView[] }>(endpoint);
@@ -62,7 +63,8 @@ export function KnowledgeGapPanel({ errorItemId }: { errorItemId: string }) {
             {notice && <p role="status" className="whitespace-pre-wrap rounded-md bg-amber-50 p-3 text-sm text-amber-900">{notice}</p>}
             {manual && <ManualGapForm busy={busy} onSave={async candidate => { if (await action({ action: 'manual', candidate })) setManual(false); }} />}
             {loading ? <p>{t.common.loading}</p> : diagnoses.length === 0 && <p className="text-sm text-muted-foreground">{t.gaps.empty}</p>}
-            {diagnoses.map(diagnosis => <DiagnosisCard key={diagnosis.id} diagnosis={diagnosis} busy={busy} onAction={action} />)}
+            {(showAll ? diagnoses : [diagnoses.find(d => !d.stale && d.status !== 'rejected') ?? diagnoses[0]].filter((d): d is GapView => Boolean(d))).map(diagnosis => <DiagnosisCard key={diagnosis.id} diagnosis={diagnosis} busy={busy} onAction={action} />)}
+            {diagnoses.length > 1 && <Button variant="outline" onClick={() => setShowAll(value => !value)}>{showAll ? t.gaps.showLess : t.gaps.showAll.replace('{count}', String(diagnoses.length))}</Button>}
         </CardContent>
     </Card>;
 }

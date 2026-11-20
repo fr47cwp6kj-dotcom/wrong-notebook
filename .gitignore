@@ -77,3 +77,8 @@ __pycache__/
 
 # 安装包构建产物
 /dist/
+
+# 本地试用包及原始照片
+downloads/
+错题/
+reports/

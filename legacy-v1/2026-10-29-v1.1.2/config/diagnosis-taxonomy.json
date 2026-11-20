@@ -1,0 +1,93 @@
+{
+  "schema": "diagnosis-taxonomy-v1",
+  "principles": {
+    "no_manual_copying": true,
+    "student_confirmation_required": true,
+    "allow_multiple_gaps": true,
+    "allow_uncertain": true,
+    "minimum_evidence_required": true,
+    "target_knowledge_units_not_whole_questions": true
+  },
+  "surface_reasons": [
+    {
+      "code": "read_condition_missed",
+      "label": "审题漏条件"
+    },
+    {
+      "code": "concept_misunderstood",
+      "label": "概念未理解"
+    },
+    {
+      "code": "calculation_or_copy",
+      "label": "计算 / 抄写错误"
+    },
+    {
+      "code": "step_skipped",
+      "label": "解题步骤跳跃"
+    },
+    {
+      "code": "other",
+      "label": "其他"
+    },
+    {
+      "code": "uncertain",
+      "label": "不确定"
+    }
+  ],
+  "gap_types": [
+    {
+      "code": "condition_signal_missed",
+      "label": "条件信号未识别",
+      "question_to_student": "这个条件当时有没有提醒你想到什么？"
+    },
+    {
+      "code": "concept_definition_unstable",
+      "label": "概念定义或边界不稳",
+      "question_to_student": "不用看笔记，你能说出这个定义和适用条件吗？"
+    },
+    {
+      "code": "formula_condition_misapplied",
+      "label": "公式适用条件误用",
+      "question_to_student": "这个公式为什么在这里能用或不能用？"
+    },
+    {
+      "code": "unit_connection_missing",
+      "label": "知识单元连接缺失",
+      "question_to_student": "这两个知识点分别会，为什么连到一起就卡住？"
+    },
+    {
+      "code": "representation_conversion_failed",
+      "label": "文字 / 符号 / 图形转换失败",
+      "question_to_student": "能把题目条件换一种表示方式吗？"
+    },
+    {
+      "code": "strategy_selection_missing",
+      "label": "路线选择缺失",
+      "question_to_student": "目标是什么，可走的路线有哪些？"
+    },
+    {
+      "code": "execution_slip",
+      "label": "计算 / 符号 / 单位失误",
+      "question_to_student": "这一步重算一遍，错误发生在哪里？"
+    },
+    {
+      "code": "other",
+      "label": "其他"
+    },
+    {
+      "code": "uncertain",
+      "label": "不确定"
+    }
+  ],
+  "diagnosis_card_fields": [
+    "photo_id",
+    "stuck_step_order",
+    "stuck_step_description",
+    "unused_condition",
+    "knowledge_unit_ids",
+    "gap_type",
+    "trigger_rule",
+    "minimal_practice",
+    "student_confirmation"
+  ]
+}

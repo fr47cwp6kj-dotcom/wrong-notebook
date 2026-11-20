@@ -10,17 +10,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { RegionSelector } from "@/components/region-selector";
 import { ZoomControls } from "@/components/zoom-controls";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { cropImageRegions } from "@/lib/image-crop";
+import { cropImageRegions, mergeImageRegions } from "@/lib/image-crop";
 import type { ImageRegion } from "@/lib/image-crop";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { useImageZoom } from "@/lib/use-image-zoom";
 import { toast } from "@/lib/feedback";
 
 // 未缩放时图片适应弹窗的尺寸
-const FIT_STYLE: Record<"single" | "multi", CSSProperties> = {
+const FIT_STYLE: Record<"single" | "multi" | "merge", CSSProperties> = {
     single: { maxHeight: "70vh", maxWidth: "100%", objectFit: "contain" },
     multi: { maxHeight: "65vh", maxWidth: "100%", objectFit: "contain" },
+    merge: { maxHeight: "65vh", maxWidth: "100%", objectFit: "contain" },
 };
+
+type CropMode = "single" | "multi" | "merge";
 
 interface ImageCropperProps {
     imageSrc: string;
@@ -36,13 +39,13 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
     // 始终保存百分比坐标，缩放改变图片显示尺寸后仍然准确
     const [crop, setCrop] = useState<Crop>();
     const imgRef = useRef<HTMLImageElement>(null);
-    const [mode, setModeState] = useState<"single" | "multi">("single");
+    const [mode, setModeState] = useState<CropMode>("single");
     const { containerRef, zoom, imageStyle, measureImage, zoomIn, zoomOut, reset: resetZoom } = useImageZoom(FIT_STYLE[mode]);
     // 换图后回到 100%
     useEffect(() => {
         resetZoom();
     }, [imageSrc, resetZoom]);
-    const setMode = (next: "single" | "multi") => {
+    const setMode = (next: CropMode) => {
         resetZoom();
         setModeState(next);
     };
@@ -59,6 +62,19 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
             setRegions([]);
         } catch (e) {
             frontendLogger.error('[ImageCropper]', 'Multi-image crop failed', { error: e });
+        }
+    };
+
+    /** 一题拼图：多个框按版面顺序拼接为一张完整题图，走单题识别流程 */
+    const handleMergeConfirm = async () => {
+        if (!multiImgRef.current || regions.length === 0) return;
+        try {
+            const merged = await mergeImageRegions(multiImgRef.current, regions);
+            setRegions([]);
+            onCropComplete(merged);
+        } catch (e) {
+            frontendLogger.error('[ImageCropper]', 'Merge regions failed', { error: e });
+            toast.error(t.upload.imagePrepareFailed);
         }
     };
 
@@ -98,7 +114,7 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
                     {/* m-auto 居中：图片放大超出容器后仍能滚动到左上角 */}
                     <div ref={containerRef} className="flex h-full w-full overflow-auto p-4">
                         <div className="m-auto">
-                            {mode === "multi" ? (
+                            {mode !== "single" ? (
                                 <RegionSelector
                                     ref={multiImgRef}
                                     imageSrc={imageSrc}
@@ -129,27 +145,27 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
 
                 <div className="p-4 border-t bg-background shrink-0 space-y-3">
                     {onMultiCropComplete && (
-                        <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 sm:w-80">
-                            {(["single", "multi"] as const).map((value) => (
+                        <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1 sm:w-96">
+                            {(["single", "multi", "merge"] as const).map((value) => (
                                 <button
                                     key={value}
                                     type="button"
                                     onClick={() => setMode(value)}
-                                    className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${mode === value ? "bg-background shadow-sm" : "text-muted-foreground"}`}
+                                    className={`rounded px-2 py-1.5 text-sm font-medium transition-colors ${mode === value ? "bg-background shadow-sm" : "text-muted-foreground"}`}
                                 >
-                                    {value === "single" ? t.batchImport.singleMode : t.batchImport.multiMode}
+                                    {value === "single" ? t.batchImport.singleMode : value === "multi" ? t.batchImport.multiMode : t.batchImport.mergeMode}
                                 </button>
                             ))}
                         </div>
                     )}
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                         <p className="text-sm text-muted-foreground">
-                            {mode === "multi"
-                                ? `${t.batchImport.hint} ${t.batchImport.regionCount.replace("{count}", String(regions.length))}`
+                            {mode === "multi" || mode === "merge"
+                                ? `${mode === "multi" ? t.batchImport.hint : t.batchImport.mergeHint} ${t.batchImport.regionCount.replace("{count}", String(regions.length))}`
                                 : (t.common.cropper?.hint || "💡 Drag to adjust crop area")}
                         </p>
                         <div className="flex gap-2 justify-end">
-                            {mode === "multi" && regions.length > 0 && (
+                            {mode !== "single" && regions.length > 0 && (
                                 <Button variant="ghost" onClick={() => setRegions([])}>
                                     {t.batchImport.clear}
                                 </Button>
@@ -160,6 +176,10 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
                             {mode === "multi" ? (
                                 <Button onClick={handleMultiConfirm} disabled={regions.length === 0}>
                                     {t.batchImport.start.replace("{count}", String(regions.length))}
+                                </Button>
+                            ) : mode === "merge" ? (
+                                <Button onClick={handleMergeConfirm} disabled={regions.length === 0}>
+                                    {t.batchImport.mergeStart}
                                 </Button>
                             ) : (
                                 <Button onClick={handleConfirm}>

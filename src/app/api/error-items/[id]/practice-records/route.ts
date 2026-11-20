@@ -27,8 +27,8 @@ export async function GET(
             where: { id },
             select: {
                 userId: true,
-                masteryLevel: true,
                 masteryProbability: true,
+                masteryLevel: true,
                 masteryReason: true,
                 masterySource: true,
                 masteryEvaluatedAt: true,
@@ -64,7 +64,7 @@ export async function GET(
         const { userId: _userId, practiceRecords, ...mastery } = item;
         return NextResponse.json({
             ...mastery,
-            masteryStatus: masteryStatusOf(practiceRecords.length, mastery.masteryProbability),
+            masteryStatus: masteryStatusOf(practiceRecords.length, mastery.masteryProbability, mastery.masteryLevel),
             records: practiceRecords.map(({ examQuestion, ...record }) => ({
                 ...record,
                 exam: examQuestion

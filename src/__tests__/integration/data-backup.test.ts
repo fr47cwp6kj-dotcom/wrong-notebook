@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -27,7 +28,6 @@ import { sanitizeFigureSvg } from '@/lib/figure-svg';
 import { sanitizeSvgAnimation } from '@/lib/svg-animation';
 import { saveGap } from '@/lib/knowledge-gap-store';
 import { gapFixture } from '../fixtures/knowledge-gap';
-import { randomUUID } from 'node:crypto';
 
 let database: PrismaClient;
 let directory: string;
@@ -80,9 +80,18 @@ beforeEach(async () => {
     await database.user.create({ data: { id: 'user-1', email: mocks.session.user.email, password: 'test-only' } });
     await database.subject.create({ data: { id: 'math', name: '数学', stage: 'junior_high', subjectKey: 'math', userId: 'user-1' } });
     await database.knowledgeTag.create({ data: { id: 'tag-1', name: '自定义标签', subject: 'math', userId: 'user-1' } });
+    // 整卷图哈希按内容计算，与入库接口的去重逻辑一致
+    await database.paperImage.create({
+        data: {
+            id: 'paper-img-1', userId: 'user-1',
+            hash: createHash('sha256').update('data:image/jpeg;base64,cGFwZXI=').digest('hex'),
+            dataUrl: 'data:image/jpeg;base64,cGFwZXI=',
+        },
+    });
     await database.errorItem.create({
         data: {
             id: 'item-1', shortId: 'AbC234', userId: 'user-1', subjectId: 'math', originalImageUrl: 'data:image/png;base64,dGVzdA==',
+            paperImageId: 'paper-img-1',
             questionText: '求解 x + 2 = 5', answerText: 'x = 3', analysis: '移项', wrongAnswerText: 'x = 7', mistakeAnalysis: '符号错误',
             mistakeStatus: 'wrong_attempt', source: '期中考试', errorType: '计算', userNotes: '注意符号', gradeSemester: '初二上',
             questionKnowledgePoints: JSON.stringify({ '15': ['轴对称最短路径'], '16': ['全等三角形'] }),
@@ -97,7 +106,7 @@ beforeEach(async () => {
     await database.practiceRecord.create({
         data: {
             userId: 'user-1', errorItemId: 'item-1', subject: 'math', difficulty: 'medium', isCorrect: true, result: 'correct',
-            questionText: '变式题', answerText: 'x = 4', analysis: '同理', figureSvg: figure, source: 'practice',
+            questionText: '变式题', answerText: 'x = 4', analysis: '同理', figureSvg: figure, source: 'practice', hintUsed: true, hintLevel: 2,
             createdAt: new Date('2026-10-20T00:00:00Z'),
         },
     });
@@ -113,7 +122,7 @@ describe('数据导出后再导入（真实 SQLite）', () => {
         const original = await database.errorItem.findUniqueOrThrow({ where: { id: 'item-1' }, include: { subject: true } });
         const diagnosis = await database.$transaction(tx => saveGap(tx, original, { stage: 'junior_high', subject: 'math' }, gapFixture, 'manual'));
         await database.gapDiagnosis.update({ where: { id: diagnosis.id }, data: { status: 'confirmed', practiceReviewed: true } });
-        await database.unitPracticeEvent.create({ data: { diagnosisId: diagnosis.id, requestId: randomUUID(), practiceIndex: 0, answer: '两边同时减去 2', result: 'correct' } });
+        await database.unitPracticeEvent.create({ data: { diagnosisId: diagnosis.id, requestId: randomUUID(), practiceIndex: 0, answer: '两边同时减去 2', result: 'correct', independent: true } });
         const backup = await exportBackup();
         await clearUserData();
         await database.knowledgeUnit.deleteMany();
@@ -122,7 +131,7 @@ describe('数据导出后再导入（真实 SQLite）', () => {
         expect(restored).toMatchObject({ originId: diagnosis.originId, status: 'confirmed', practiceReviewed: true, sourceDigest: diagnosis.sourceDigest });
         expect(restored.unit).toMatchObject({ userId: 'user-1', stage: 'junior_high', name: gapFixture.unitName });
         expect(restored.events).toHaveLength(1);
-        expect(restored.events[0]).toMatchObject({ answer: '两边同时减去 2', result: 'correct' });
+        expect(restored.events[0]).toMatchObject({ answer: '两边同时减去 2', result: 'correct', independent: true });
         await importBackup(backup);
         expect(await database.gapDiagnosis.count()).toBe(1);
         expect(await database.unitPracticeEvent.count()).toBe(1);
@@ -130,6 +139,22 @@ describe('数据导出后再导入（真实 SQLite）', () => {
 
     it('导出文件使用第 2 版格式', async () => {
         expect((await exportBackup()).version).toBe(2);
+    });
+
+    it('整卷原图随错题备份恢复，重复导入不重复存储', async () => {
+        const backup = await exportBackup();
+        expect(backup.paperImages).toHaveLength(1);
+        expect(backup.paperImages[0]).toMatchObject({ id: 'paper-img-1', dataUrl: 'data:image/jpeg;base64,cGFwZXI=' });
+        expect(backup.errorItems[0].paperImageId).toBe('paper-img-1');
+
+        await clearUserData();
+        await importBackup(backup);
+        const restored = await database.errorItem.findFirstOrThrow({ where: { userId: 'user-1' }, include: { paperImage: true } });
+        expect(restored.paperImage).toMatchObject({ dataUrl: 'data:image/jpeg;base64,cGFwZXI=' });
+
+        // 再次导入：同一张整卷图按内容哈希复用，不新建记录
+        await importBackup(backup);
+        expect(await database.paperImage.count({ where: { userId: 'user-1' } })).toBe(1);
     });
 
     it('错题与举一反三记录的全部字段完整保留', async () => {
@@ -150,7 +175,7 @@ describe('数据导出后再导入（真实 SQLite）', () => {
         expect(item.tags.map((tag) => tag.name)).toEqual(['自定义标签']);
 
         const record = await database.practiceRecord.findFirstOrThrow({ where: { errorItemId: item.id } });
-        expect(record).toMatchObject({ result: 'correct', questionText: '变式题', figureSvg: figure, source: 'practice' });
+        expect(record).toMatchObject({ result: 'correct', questionText: '变式题', figureSvg: figure, source: 'practice', hintUsed: true, hintLevel: 2 });
         // 已带掌握概率导入，不重复评估
         expect(mocks.scheduleMasteryEvaluation).not.toHaveBeenCalled();
     });

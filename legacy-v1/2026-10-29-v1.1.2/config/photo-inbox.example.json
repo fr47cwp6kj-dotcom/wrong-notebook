@@ -1,0 +1,20 @@
+{
+  "schema": "photo-inbox-v1",
+  "root_path": "D:/错因Agent",
+  "share": {
+    "enabled": true,
+    "name": "错因Agent照片",
+    "path": "D:/错因Agent/错题",
+    "write_accounts": ["COMPUTERNAME\\USERNAME"],
+    "require_smb_encryption": false
+  },
+  "stages": {
+    "junior": "初中",
+    "senior": "高中"
+  },
+  "inbox_states": {
+    "pending": "待识别",
+    "archived": "已归档",
+    "failed": "识别失败"
+  }
+}

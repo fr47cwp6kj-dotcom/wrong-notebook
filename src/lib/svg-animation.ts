@@ -77,3 +77,57 @@ export function buildSvgAnimationDocument(svg: string): string {
         + '<style>html,body{margin:0;height:100%;background:#fff;overflow:hidden}svg{display:block;width:100%;height:100%}</style>'
         + `</head><body>${svg}</body></html>`;
 }
+
+/** 动画的关键步骤：标题与该步开始的秒数，供播放器分步点击 */
+export interface SvgAnimationStep {
+    index: number;
+    title: string;
+    begin: number;
+}
+
+/** generateSvgAnimation 的返回：动画 SVG 与步骤时间轴 */
+export interface SvgAnimationResult {
+    svg: string;
+    steps: SvgAnimationStep[];
+}
+
+/**
+ * 解析 AI 输出的 <animation_steps>：JSON 数组 [{index,title,begin}]，
+ * begin 支持 SMIL 时钟值（如 "5s"）或数字（秒）；格式不合法时返回空数组
+ */
+export function parseSvgAnimationSteps(raw: string | null | undefined): SvgAnimationStep[] {
+    if (!raw?.trim()) return [];
+    let value: unknown;
+    try {
+        value = JSON.parse(raw.trim());
+    } catch {
+        return [];
+    }
+    if (!Array.isArray(value)) return [];
+    const steps: SvgAnimationStep[] = [];
+    for (const entry of value) {
+        if (typeof entry !== 'object' || entry === null) continue;
+        const record = entry as Record<string, unknown>;
+        const title = typeof record.title === 'string' ? record.title.trim() : '';
+        if (!title) continue;
+        const beginRaw = record.begin;
+        const begin = typeof beginRaw === 'number' && Number.isFinite(beginRaw)
+            ? beginRaw
+            : parseClockValue(typeof beginRaw === 'string' ? beginRaw : null);
+        if (begin === null || begin < 0) continue;
+        const index = typeof record.index === 'number' ? record.index : steps.length + 1;
+        steps.push({ index, title, begin });
+    }
+    // 按开始时间升序；步数过少时不构成时间轴，视为无效
+    const sorted = steps.sort((a, b) => a.begin - b.begin);
+    return sorted.length >= 2 ? sorted.map((step, i) => ({ ...step, index: i + 1 })) : [];
+}
+
+/**
+ * 由 AI 回复构造动画结果：净化 SVG（无效返回 null）并解析步骤时间轴
+ */
+export function buildSvgAnimationResult(svgRaw: string | null, stepsRaw?: string | null): SvgAnimationResult | null {
+    const svg = sanitizeSvgAnimation(svgRaw);
+    if (!svg) return null;
+    return { svg, steps: parseSvgAnimationSteps(stepsRaw) };
+}

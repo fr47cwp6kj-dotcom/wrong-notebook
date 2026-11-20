@@ -1,20 +1,28 @@
-# Cuoyin Agent (Smart Wrong Notebook)
+# Cuoyin Agent · wrong-notebook fork
 
-Snap a photo of a wrong answer and the AI recognizes the question, solves it, analyzes the mistake and tags knowledge points; manage notebooks, practice with similar questions, print mistake exams, diagnose knowledge gaps and track mastery. All data stays on your own machine and you configure the AI service yourself. Two ways to use it: the **Mac desktop app** (installer from Releases) or **self-hosted web** (Docker or from source).
+Based on [margrop/wrong-notebook v2026.10.26](https://github.com/margrop/wrong-notebook/releases/tag/v2026.10.26), with the upstream MIT license and features preserved. Provenance: [UPSTREAM.json](UPSTREAM.json).
 
-To run from source, install Node.js 22.15+, run `npm ci --registry=https://registry.npmjs.org` and `npx prisma generate`, then `npm run dev` and open http://localhost:3000. The initial account is `admin@localhost` / `123456`; the setup wizard requires a password change. Configure your own AI provider, or use manual question and diagnosis entry. See [remote access](doc/REMOTE_ACCESS.md) for exposing the app over the Internet with a reverse proxy or tunnel.
+Run `启动错因Agent.command` on macOS or `启动错因Agent.cmd` on Windows. The local app opens at http://localhost:3333. Install Node.js 22.15+, run `npm ci --registry=https://registry.npmjs.org` and `npx prisma generate` first on a new machine. Keep the terminal open while using the app. The initial account is `admin@localhost` / `123456`; the setup wizard requires a password change. Configure your own AI provider, or use manual question and diagnosis entry.
 
-Core features include evidence-based knowledge-gap candidates, student confirmation/rejection/uncertainty, reviewed small-step practice, and knowledge-unit tracking across questions. AI evidence must be an exact excerpt of the question or student work. Missing student work prompts for more information. Source edits make old diagnoses stale. Practice counts only after confirmation and human review; consecutive independent successes in two source questions are required for cross-question verification. All of this data is included in backup exports and imports.
+This fork adds evidence-based knowledge-gap candidates, student confirmation/rejection/uncertainty, reviewed small-step practice, and knowledge-unit tracking across questions. AI evidence must be an exact excerpt of the question or student work. Missing student work prompts for more information. Source edits make old diagnoses stale. Practice counts only after confirmation and human review; consecutive independent successes in two source questions are required for cross-question verification. Earlier small-step records without evidence of answering before revealing the solution remain in history but do not count as independent passes. New data is included in backup exports and imports.
 
-The desktop app and a source checkout use separate data directories; migrate between them with backup export/import in Settings. The original V1 is preserved in `legacy-v1/2026-10-29-v1.1.2`, with a SHA-256 manifest. Details: [usage guide](doc/CUOYIN_FORK.md).
+For a fixed remote URL, set `CUOYIN_PUBLIC_URL` in `.env`, forward your existing tunnel service to `http://127.0.0.1:3334`, and run `启动错因Agent正式版.command`. Production reuses the current accounts, database and AI settings. Configure the provider hostname and authorization first; see [remote access](doc/REMOTE_ACCESS.md) for building, updating and stopping the service.
+
+For cpolar, reserve a fixed subdomain and set its `subdomain` and matching region in the tunnel config. `启动错因Agent外网.command` starts the local production app when the tunnel targets `127.0.0.1:3334`; for a NAS or other target, it checks the upstream health and starts only the tunnel. Set `CUOYIN_PUBLIC_URL` to the HTTPS URL when running local production. The current fixed URL forwards to the existing NAS app and its database, separate from the Mac database. Closing the window stops the tunnel.
+
+The original V1 is preserved in `legacy-v1/2026-10-29-v1.1.2`, with a SHA-256 manifest. This fork uses `data/cuoyin-fork.db`, separately from the official desktop app. Photos are not automatically imported. Details: [fork guide](doc/CUOYIN_FORK.md).
 
 Web uploads, drag and drop, and original-image replacement accept JPG, PNG, WebP, GIF, HEIC/HEIF, BMP and AVIF. You can also paste image files from the clipboard, including iPhone originals identified by their extension alone. The browser converts HEIC/HEIF to JPEG before cropping and imports only the primary image from multi-image files.
 
 The default image recognition prompt redraws figures as compact SVG diagrams that preserve the structure and labels needed to solve the problem. For a more detailed redraw, use AI Redraw Figure on the question detail page.
 
+Importing a photo also stores the full paper image and links it to every question imported from it; open a question and click "Full paper" to view the original photo at any time. Original images in the proofreading page and on the detail page can be enlarged full screen. The detail page shows the original image by default, beside the question text on wide screens, and keeps it visible while scrolling. If the redrawn figure looks off, the detail page points to the original photo above.
+
+When recognition misses the student's wrong answer, open the "Wrong Answer / Work" card on the detail page and use "Recognize from photo": photograph the answering area, and the AI transcribes the handwriting (photo saved along the way, attempt status set to "wrong attempt"). SVG animated explanations support step-by-step navigation: key steps are listed below the animation; click one to jump straight to it.
+
 The review page groups recognized question numbers and offers Question / Answer / Explanation / Mistakes tabs. It opens in rendered preview mode, with long content collapsed and images and knowledge points available on demand. Select Source or double-click a preview to edit the current question. Content that cannot be matched to a question remains accessible under Full text. Grouping preserves the original text; saving includes the entire recognition result. To save separate notebook entries, select multiple question regions during upload.
 
-All math notebooks use a **Zhejiang edition, Grade 8, first-semester** candidate list with prerequisite skills. It does not reuse the original People’s Education Press semester ordering. Geometric shortest paths have a specific application tag; uncertain tags can remain empty. Expand Knowledge points on the review page to edit up to five tags per question; mappings are saved and backed up. Existing records change only when re-tagged. See [scope and limitations](doc/MATH_CURRICULUM.md).
+All math notebooks in this fork now use a **Zhejiang edition, Grade 8, first-semester** candidate list with prerequisite skills. It does not reuse the original People’s Education Press semester ordering. Geometric shortest paths have a specific application tag; uncertain tags can remain empty. Expand Knowledge points on the review page to edit up to five tags per question; mappings are saved and backed up. Existing records change only when re-tagged. See [scope and limitations](doc/MATH_CURRICULUM.md).
 
 ---
 
@@ -28,16 +36,21 @@ The original upstream README follows.
 
 [简体中文](README.md) | **English**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Release](https://img.shields.io/github/v/release/margrop/wrong-notebook?include_prereleases)](https://github.com/margrop/wrong-notebook/releases) [![CI](https://github.com/margrop/wrong-notebook/actions/workflows/ci.yml/badge.svg)](https://github.com/margrop/wrong-notebook/actions/workflows/ci.yml) [![CodeQL](https://github.com/margrop/wrong-notebook/actions/workflows/codeql.yml/badge.svg)](https://github.com/margrop/wrong-notebook/actions/workflows/codeql.yml) [![npm](https://img.shields.io/npm/v/wrong-notebook)](https://www.npmjs.com/package/wrong-notebook)
+
 An AI-powered notebook for the questions you got wrong. Snap a photo or type a question, and AI recognizes it, solves it, tags it with knowledge points and rates its difficulty. Manage your notebooks, practice with similar questions, build printable exams and track how well you have mastered each question.
+
+🌐 **Project website**: <https://blog.margrop.net/wrong-notebook-github-pages/en/>
 
 🚀 **Live demo**: <https://wrong-notebook-demo.vercel.app> (account `demo@localhost`, password `demo123456`)
 
 > The demo uses a shared account and its data is visible to every visitor. Do not enter personal information.
 
-📦 **Install anywhere**: Docker (build from source) · Windows · macOS · Linux · fnOS · Android phone / tablet (standalone with a built-in server, or a client for your server). Get the installers from [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases); see [Quick Start](#-quick-start) for instructions.
+📦 **Install anywhere**: Docker image (amd64 / arm64) · npm (`npm i -g wrong-notebook`) · Windows · macOS · Linux · fnOS · Android phone / tablet (standalone with a built-in server, or a client for your server). Get the installers from [Releases](https://github.com/margrop/wrong-notebook/releases); see [Quick Start](#-quick-start) for instructions.
 
 🆓 **Works with a free MiniMax account**: choose the "MiniMax Code OAuth" channel and sign in with a MiniMax Code account in the browser to use `MiniMax-M3.1-Flash` without buying an API key. The app checks in every day to collect credits, and AI features such as recognition and explanations use the account's free credits. See [MiniMax Code OAuth](#minimax-code-oauth).
+
+> This repository is a fork of [wttwins/wrong-notebook](https://github.com/wttwins/wrong-notebook) with many additional features (listed below).
 
 > The app's built-in knowledge-point library follows the Chinese K-12 curriculum (primary, junior high and senior high school). The interface is available in Simplified Chinese and English.
 
@@ -130,7 +143,7 @@ Practice statistics show total practice, accuracy and active months, with distri
 
 ### Input and recognition
 
-- **📷 Many ways to add questions**: upload images, paste from the clipboard (Ctrl/⌘+V), take a screenshot, or type the question (Markdown and LaTeX supported). Crop images (zoom with the mouse wheel, a pinch or the zoom buttons for precise selection), or select several questions on one image to import them in a batch.
+- **📷 Many ways to add questions**: upload images, paste from the clipboard (Ctrl/⌘+V), take a screenshot, or type the question (Markdown and LaTeX supported). Crop images (zoom with the mouse wheel, a pinch or the zoom buttons for precise selection), or select several questions on one image to import them in a batch. When the text and the figure of one question sit apart on the paper, use "One question, multi-box" to box each part and merge them into a single image in page order.
 - **🤖 AI recognition and solving**: AI extracts the question text, answer, analysis, the student's wrong answer and the cause of the mistake, identifies the subject and picks tags from the knowledge library. Single-question recognition and text solving always open the review editor before saving. Explanations focus on key steps, and evidence-based mistake analysis includes concrete next actions.
 - **🔁 Duplicate detection**: on import, question text is compared by similarity. Above the threshold (90% by default, adjustable in settings) the question is not imported again; a new wrong attempt is recorded on the original instead.
 - **🆔 Question ID**: every question has a 6-digit ID you can copy or type into the notebook to open it directly. Printed questions and exams show the source ID so you can find the original when entering results.
@@ -151,7 +164,13 @@ Practice statistics show total practice, accuracy and active months, with distri
 ### Review and practice
 
 - **🔄 Practice similar questions**: generate variant questions (fill-in-the-blank or free response) on the same knowledge point, choose the difficulty and submit an answer: it is checked automatically (an identical answer is marked correct right away, otherwise the AI compares it with the reference answer and explains why), and you can change the result before saving. The most recently generated question and solution are kept for each mistake and shown directly next time; click Regenerate for a new one.
-- **📈 Mastery probability**: AI estimates how likely you have mastered each question from the answer history of practice and exams. Questions fall into three states: **To Review** (no practice records yet), **Reviewing** (has records, probability below 50%) and **Mastered** (has records, probability 50% or above).
+- **📈 Mastery probability**: AI estimates how likely you have mastered each question from the answer history of practice and exams. Questions fall into three states: **To Review** (no practice records yet), **Reviewing** and **Mastered**. A sufficient probability is necessary but not enough for **Mastered**: you also need independent correct answers on at least two different practice questions. Repeating the same question on another day or through another source remains one context; legacy records without a question snapshot cannot prove cross-question success. Answering after viewing hints does not count as independent. Another independent correct answer after a completed review is also required. Until then the question stays in **Reviewing** with a hint of what is still missing (e.g. "waiting for review verification"); a wrong answer in a later review moves it back to **Reviewing** while the practice history is kept. Knowledge gap diagnoses are presented in three steps — where it went wrong, why, and what to practice next — with the detailed analysis collapsible.
+
+When a practice question has a confirmed, current knowledge-gap diagnosis, available hints appear progressively: unused condition, trigger rule, then first stuck step. Practice records retain the highest hint level. A correct answer after using a hint, or after revealing the full answer, does not count as an independent pass. The existing practice flow remains available without a usable diagnosis.
+
+The diagnosis report initially shows only the latest "where it went wrong" step; students can proceed to "why" and "what to practice" and expand the full evidence when needed. Knowledge-unit verification has five stages: pending, initial pass, cross-question verification, temporary mastery, and stable mastery. The last two require a boundary contrast and later review evidence; a new failure moves the stage back.
+
+For these questions, generation also receives the gap type, trigger rule, applicability boundary, unused condition, and first stuck step, and asks for a variant that tests the rule's conditions. Generated output is checked for a nonempty question, answer, and explanation; this does not yet prove mathematical correctness.
 - **📅 Daily review**: each question is scheduled at Ebbinghaus intervals of 1, 2, 4, 7, 15 and 30 days. A correct answer moves it to the next interval; a wrong answer starts over. The **Review** page lists questions due today (earliest first), and the home page shows how many are due.
 - **🧾 Mistake exams**: draw questions at random by notebook, knowledge point and mastery, and turn them into a printable exam of similar questions. After finishing, enter results per question; they are added to the original question's answer history.
 - **🖨️ Print mistakes**: print filtered questions with your choice of question text or original image, answer, analysis and knowledge points, adjust image scale, then print or save as PDF.
@@ -176,7 +195,7 @@ Screen capture requires a secure browser context (HTTPS). When running in Docker
 The app is a PWA: add it to your phone's or tablet's home screen to run it full screen and open it with one tap. Tablets can use it in landscape.
 
 - **iPhone / iPad (Safari)**: tap **Share** at the bottom → **Add to Home Screen**.
-- **Android (Chrome)**: tap the **menu** at the top right → **Add to Home screen** or **Install app**. You can also install the Android app from [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) (see Installers below).
+- **Android (Chrome)**: tap the **menu** at the top right → **Add to Home screen** or **Install app**. You can also install the Android app from [Releases](https://github.com/margrop/wrong-notebook/releases) (see Installers below).
 
 When served over HTTPS (or `localhost`), a service worker caches scripts, styles and icons so the app opens faster, and shows an offline page when the network is down. Questions, statistics and other data always come from the server and are not cached offline.
 
@@ -199,7 +218,7 @@ When served over HTTPS (or `localhost`), a service worker caches scripts, styles
 2. **Clone and install dependencies**:
 
    ```bash
-   git clone https://github.com/fr47cwp6kj-dotcom/wrong-notebook.git
+   git clone https://github.com/margrop/wrong-notebook.git
    cd wrong-notebook
    npm ci
    ```
@@ -230,7 +249,7 @@ AI API keys can also be set in the web settings after signing in; see the AI mod
 
 ### Option 2: Docker image (recommended)
 
-Every release publishes an image to GitHub Container Registry, `ghcr.io（如自行发布镜像可替换）`, for `linux/amd64` and `linux/arm64`. Pull it directly; no source code needed.
+Every release publishes an image to GitHub Container Registry, `ghcr.io/margrop/wrong-notebook`, for `linux/amd64` and `linux/arm64`. Pull it directly; no source code needed.
 
 | Image tag | Description |
 | --- | --- |
@@ -238,7 +257,7 @@ Every release publishes an image to GitHub Container Registry, `ghcr.io（如自
 | `2026.10` | Latest release of the month |
 | `latest` | Latest stable release |
 
-See [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) for available versions.
+See [Releases](https://github.com/margrop/wrong-notebook/releases) for available versions.
 
 1. **Prepare directories and a secret**:
 
@@ -260,7 +279,7 @@ See [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) for
      -p 3000:3000 \
      -v "$(pwd)/data:/app/data" \
      -v "$(pwd)/config:/app/config" \
-     ghcr.io（如自行发布镜像可替换）:latest
+     ghcr.io/margrop/wrong-notebook:latest
    ```
 
    With Docker Compose: download [`docker-compose.yml`](docker-compose.yml) into the current directory, set `NEXTAUTH_SECRET` (and `NEXTAUTH_URL`), then run:
@@ -282,7 +301,7 @@ See [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases) for
 
 Data lives in the mounted `data/` (SQLite database) and `config/` (AI settings saved from the web UI, etc.) directories. **Settings → About** and `/api/health` show the running version. For HTTPS, see the [HTTPS setup guide](doc/HTTPS_SETUP.md) and `docker-compose.https.yml`.
 
-No public Docker image is published; build your own with `docker build -t wrong-notebook .` from the source.
+> The upstream image `ghcr.io/wttwins/wrong-notebook` **does not include** the features added in this repository. Use `ghcr.io/margrop/wrong-notebook`.
 
 ### Option 3: Build the image from source
 
@@ -303,7 +322,7 @@ With `docker-compose.yml`, change `image` to `wrong-notebook:local`.
 
 ### Option 4: Installers (npm / Windows / macOS / Linux / fnOS / Android)
 
-If you prefer not to use Docker, download the desktop app or the fnOS package from [Releases](https://github.com/fr47cwp6kj-dotcom/wrong-notebook/releases), or install with npm:
+If you prefer not to use Docker, download the desktop app or the fnOS package from [Releases](https://github.com/margrop/wrong-notebook/releases), or install with npm:
 
 ```bash
 npm install -g wrong-notebook
@@ -319,7 +338,7 @@ wrong-notebook --port 3000
 | Android phone / tablet (standalone) | `WrongNotebook-Android-Phone-<version>.apk` (portrait), `WrongNotebook-Android-Tablet-<version>.apk` (rotates between portrait and landscape) |
 | Android phone / tablet (client) | `WrongNotebook-Android-Client-Phone-<version>.apk`, `WrongNotebook-Android-Client-Tablet-<version>.apk` |
 
-The npm package needs Node.js 22.15 or later and stores data in `~/.wrong-notebook` by default. The desktop app listens on `127.0.0.1` only; the fnOS package needs Node.js v24 from the fnOS app center and is served on port 39300. The standalone Android app includes the server and works right after installation. Data stays on the device (uninstalling the app deletes it, and it is excluded from Android system backup because it contains API keys, so export a backup in Settings before uninstalling or switching phones); sign in with the default administrator `admin@localhost` / `123456` the first time and change the password when prompted. It needs a 64-bit ARM device with Android 8.0 or later. The Android client does not include the server: on first launch, enter the address of a deployed server (for example `https://notebook.example.com`); you can change the server under Settings → About. It needs Android 7.0 or later. Both apps support taking photos for upload, saving exported files and system printing, and can be installed side by side.
+The npm package needs Node.js 22.15 or later and stores data in `~/.wrong-notebook` by default. The desktop app listens on `127.0.0.1` only; the fnOS package needs Node.js v24 from the fnOS app center and is served on port 39300. The standalone Android app includes the server and works right after installation. Data stays on the device (uninstalling the app deletes it, and it is excluded from Android system backup because it contains API keys, so export a backup in Settings before uninstalling or switching phones); sign in with the default administrator `admin@localhost` / `123456` the first time and change the password when prompted. It needs a 64-bit ARM device with Android 8.0 or later. The Android client does not include the server: on first launch, enter the address of a deployed server (for example `http://192.168.1.10:3000`); you can change the server under Settings → About. It needs Android 7.0 or later. Both apps support taking photos for upload, saving exported files and system printing, and can be installed side by side.
 
 Data directories, default accounts and local builds are described in [INSTALL_PACKAGES.md](doc/INSTALL_PACKAGES.md) (Chinese).
 
@@ -485,7 +504,7 @@ After changing `prisma/schema.prisma`, create a migration with `npx prisma migra
 
 ## 📚 Documentation
 
-The topic documents below are mostly written in Simplified Chinese.
+For usage, deployment and FAQ, see the [Wiki in English](https://github.com/margrop/wrong-notebook/wiki/Home-en) (also available in [Chinese](https://github.com/margrop/wrong-notebook/wiki)). The topic documents below are mostly written in Simplified Chinese.
 
 | Document | Content |
 | :--- | :--- |
@@ -517,4 +536,4 @@ Issues and pull requests are welcome. Please read the [contributing guide](CONTR
 
 [MIT License](LICENSE)
 
-© 2026. Released under the MIT license; see [LICENSE](LICENSE).
+© 2026 margrop. This project extends [wttwins/wrong-notebook](https://github.com/wttwins/wrong-notebook); copyright in the original code remains with its author.

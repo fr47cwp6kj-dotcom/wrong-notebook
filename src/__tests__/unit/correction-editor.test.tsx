@@ -139,6 +139,31 @@ describe('校对页分类查看与编辑', () => {
     });
 });
 
+describe('校对页原图侧栏', () => {
+    it('有原图时常驻显示，点击放大后全屏查看', async () => {
+        const imagePreview = 'data:image/png;base64,AAAA';
+        await act(async () => root.render(
+            <LanguageProvider><CorrectionEditor initialData={{
+                questionText: '求和', answerText: '4', analysis: '解析', subject: '数学', knowledgePoints: [], requiresImage: false,
+                wrongAnswerText: '', mistakeAnalysis: '', mistakeStatus: 'unknown',
+            }} initialSubjectId="math" onSave={onSave} onCancel={() => undefined} imagePreview={imagePreview} /></LanguageProvider>,
+        ));
+        const preview = Array.from(container.querySelectorAll('img')).find((img) => img.getAttribute('src') === imagePreview)!;
+        expect(preview).toBeDefined();
+        // 常驻显示：不再折叠在 details 里
+        expect(preview.closest('details')).toBeNull();
+
+        await act(async () => preview.click());
+        const enlarged = container.querySelector('img[alt="Full size"]')!;
+        expect(enlarged.getAttribute('src')).toBe(imagePreview);
+    });
+
+    it('没有原图和配图时不渲染图片栏', async () => {
+        await renderEditor();
+        expect(container.querySelector('aside')).toBeNull();
+    });
+});
+
 describe('校对页逐题知识点', () => {
     it('编辑某题标签后保留其他题标签，并同步汇总知识点', async () => {
         await renderEditor({

@@ -5,7 +5,7 @@
 
 import { createLogger } from '../logger';
 import type { GapInput } from '../knowledge-gaps';
-import type { CandidateTags, GradeLevel } from './types';
+import type { CandidateTags, GradeLevel, KnowledgeFocus } from './types';
 
 const logger = createLogger('ai:prompts');
 
@@ -20,8 +20,9 @@ export function generateGapPrompt(input: GapInput): string {
 {"status":"candidate_diagnosis","diagnoses":[{"unitName":"最小知识单元名称","triggerRule":"看到 A + B，先想到 C","boundary":"适用条件和不可用的情形","surfaceReason":"表层错因","gapType":"unit_connection_missing","firstStuckStep":"第一个卡住的步骤","unusedSignal":"未使用条件","hypothesis":"候选解释","evidenceSource":"wrongAnswerText","evidenceQuote":"从对应输入字段逐字引用的连续片段","questionsToStudent":["帮助区分漏洞的追问"],"minimalPractice":[{"type":"trigger_recognition","question":"只练卡点的小题","answer":"参考答案","explanation":"小步推理"}]}]}
 gapType 只能为 condition_signal_missed、concept_definition_unstable、formula_condition_misapplied、unit_connection_missing、representation_conversion_failed、strategy_selection_missing、execution_slip、other、uncertain。
 evidenceSource 只能为 questionText 或 wrongAnswerText；evidenceQuote 必须逐字摘录，不得引用参考答案代替学生证据。firstStuckStep 与 unusedSignal 至少一个非空。
-诊断 1–5 个，每条追问 1–3 个、小练 1–3 道，练习类型只能为 trigger_recognition 或 unit_drill。练习只检验该触发规则，不要求抄整题。练习是待人工复核的草稿。
+诊断 1–5 个，每条追问 1–3 个、小练 1–2 道。练习类型为 trigger_recognition、unit_drill 或 boundary_contrast。证据足够时，安排一道规则适用题和一道 boundary_contrast 边界对比题；后者应明确区分看似相似但规则不适用的条件，答案须有可复核依据。练习是待人工复核的草稿。
 已有单元合适时沿用其准确名称、触发规则和适用边界；触发条件不同则新建，不能仅凭名字相似合并。
+若输入含 dialogue，应根据学生逐轮回答区分漏看条件、规则理解、应用与步骤衔接；回答“不知道”不可当作已证实的错误。每轮优先给一个能区分假设的下一问，已有证据不足则保持不确定。不得把 AI 推断写成学生原话。
 所有文字使用 ${input.language === 'en' ? '英文' : '简体中文'}，只返回 JSON，不添加代码围栏。
 输入数据：${JSON.stringify(input)}`;
 }
@@ -138,6 +139,7 @@ export interface PromptOptions {
   candidateTags?: CandidateTags;
   // 举一反三时原题的 SVG 配图，供 AI 参考重新画图
   originalFigureSvg?: string | null;
+  knowledgeFocus?: KnowledgeFocus;
 }
 
 /**
@@ -212,7 +214,7 @@ ${FIGURE_SVG_RULES}
 </figure_svg>
 
 <wrong_answer_text>
-如果图片中包含学生已经写出的错误解答、错误步骤、草稿或错误答案，请尽量按原样摘录；如果没有看到学生错误解答，请留空。
+如果图片中包含学生已经写出的错误解答、错误步骤、草稿或错误答案，请尽量按原样摘录；手写内容看不清的字符用 [?] 标注，不要猜测。如果没有看到学生错误解答，请留空。
 </wrong_answer_text>
 
 <mistake_status>
@@ -235,6 +237,8 @@ ${DIFFICULTY_STARS_RULES}
 1. **逐字照录**：按图片原文转录题干（含题号、分值和标点），不要改写、概括、增删字词或调整语序；看不清的字用 [?] 标注。
 2. **填空统一**：所有填空处统一写作 ____（4 个下划线），不论原图横线长短。
 3. **图形描述**：如果题目依赖图形，在题干原文之后空一行，单独写**一段**以「图示：」开头的图形描述；只能使用「图示：」这一种写法（不要写「图示信息」「图示说明」等），描述中不要重复题干已有的文字。题目不依赖图形时不要写图示段落。
+4. **印刷与手写分离**：question_text 只转录印刷体题干；学生的手写作答、草稿和红笔等批改痕迹一律写入 wrong_answer_text，严禁混入或改写题干。
+5. **禁止脑补**：题干中的数字、字母、运算符或关系符号看不清、被遮挡或无法确认时，逐处用 [?] 标注；严禁按「最常见题型」猜测、补全或改写缺失内容。若题号后的核心题干整体无法辨认，question_text 只保留题号加 [?]，不得虚构题目。
 
 【表格处理规则】
 如果图片中包含表格，必须完整转录表格内容，遵循以下原则：
@@ -297,6 +301,7 @@ ${DIFFICULTY_STARS_RULES}
 4. **禁止图片**：严禁包含任何图片链接或 markdown 图片语法。
 5. **LaTeX 规范**：
 ${LATEX_RULES}
+6. **识别诚实**：宁可标注不确定，不可编造。无法从图片确认的内容一律 [?] 或留空；若题干核心内容（数字、方程、问法）无法可靠辨认，question_text 按可辨认部分转录并在缺失处标 [?]，同时在 analysis 第一行输出「⚠️ 题干识别不确定，请人工核对」，mistake_status 填 unknown，mistake_analysis 留空。
 
 {{grade_instruction}}
 {{provider_hints}}`;
@@ -398,6 +403,38 @@ ${FIGURE_SVG_RULES}
  */
 export function generateFigurePrompt(questionText?: string | null): string {
   return replaceVariables(DEFAULT_FIGURE_TEMPLATE, {
+    question_text: questionText?.trim() || '（无题目文字）',
+  }).trim();
+}
+
+/**
+ * 从作答照片中摘录学生手写作答的提示词（详情页「拍照识别错答」）
+ */
+export const DEFAULT_WRONG_ANSWER_TEMPLATE = `【角色与核心任务 (ROLE AND CORE TASK)】
+你是一位细致的阅卷老师。用户提供的图片是一道题目的作答区域照片，其中可能包含学生手写作答。你的唯一任务是把这些手写作答原样摘录成文字。
+
+【题目文字（供参考，帮助你区分印刷题干与手写作答）】
+{{question_text}}
+
+【摘录规则】
+1. 只摘录学生的手写内容：解题过程、算式、草稿、填空的答案、最终答案等。
+2. 逐字照录，不要改写、补全或纠正；数学式用 LaTeX（行内 $...$）；换行保留原有步骤顺序。
+3. 手写内容与题目印刷文字无法区分时，宁可不录也不要把题干抄进来。
+4. 看不清或不确定的字符用 [?] 标注，禁止猜测编造。
+5. 图片中没有任何手写作答时输出「无」。
+
+【输出格式】
+只输出以下标签，不要输出其他内容：
+
+<wrong_answer_text>
+学生的手写作答全文；没有手写作答时填「无」。
+</wrong_answer_text>`;
+
+/**
+ * 生成错答识别提示词
+ */
+export function generateWrongAnswerPrompt(questionText?: string | null): string {
+  return replaceVariables(DEFAULT_WRONG_ANSWER_TEMPLATE, {
     question_text: questionText?.trim() || '（无题目文字）',
   }).trim();
 }
@@ -617,7 +654,9 @@ export function generateSimilarQuestionPrompt(
     provider_hints: options?.providerHints || ''
   }).trim();
   // 自定义模板也必须遵守统一题型规则。
-  return `${prompt}\n\n${GENERATED_QUESTION_RULES}`;
+  const focus = options?.knowledgeFocus;
+  const focusInstruction = focus ? `\n\n【本次要验证的知识漏洞】\n漏洞类型：${focus.gapType}\n触发规则：${focus.triggerRule}\n适用边界：${focus.boundary}\n学生漏用的条件：${focus.unusedSignal}\n首个卡住步骤：${focus.firstStuckStep}\n请生成能检验触发规则与适用边界的新情境题。题干必须具备唯一答案所需的全部条件；不要在题干或提示中泄露答案。` : '';
+  return `${prompt}${focusInstruction}\n\n${GENERATED_QUESTION_RULES}`;
 }
 
 /**
@@ -776,7 +815,14 @@ export const DEFAULT_SVG_ANIMATION_TEMPLATE = `【角色与核心任务 (ROLE AN
 
 <svg_animation>
 完整的 SVG 动画
-</svg_animation>`;
+</svg_animation>
+
+<animation_steps>
+按步骤输出 JSON 数组，每项形如 {"index":1,"title":"步骤简述","begin":"0s"}：
+- title 为该步的简短说明（不超过 12 个字，语言与动画文字一致）；
+- begin 为该步动画开始的 SMIL 时间，必须与 SVG 中该步元素的 begin 属性一致；
+- 数组按 begin 升序排列，步骤数量与动画的实际步骤一致。
+</animation_steps>`;
 
 /** 生成 SVG 动画讲解时随提示词发送的用户消息 */
 export const SVG_ANIMATION_REQUEST: Record<'zh' | 'en', string> = {
