@@ -405,8 +405,8 @@ describe('OpenAI Provider SVG 动画讲解', () => {
         expect(request.messages[0].content).toContain('求三角形面积');
         expect(request.messages[0].content).toContain('底乘高除以二');
         expect(request.messages[0].content).toContain('<rect width="3" height="4"/>');
-        expect(svg).toContain('<set attributeName="opacity"');
-        expect(svg).not.toContain('<script');
+        expect(svg?.svg).toContain('<set attributeName="opacity"');
+        expect(svg?.svg).not.toContain('<script');
     });
 
     it('language=en 时提示词和用户消息都要求动画文字使用英文', async () => {

@@ -540,8 +540,8 @@ describe('Azure OpenAI Provider SVG 动画讲解', () => {
         const svg = await provider.generateSvgAnimation('求面积', '6', '解析');
 
         expect(mockAzureCompletionCreate.mock.calls.at(-1)?.[0].messages[0].content).toContain('求面积');
-        expect(svg).toContain('<set attributeName="opacity"');
-        expect(svg).not.toContain('<script');
+        expect(svg?.svg).toContain('<set attributeName="opacity"');
+        expect(svg?.svg).not.toContain('<script');
     });
 });
 

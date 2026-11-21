@@ -734,9 +734,9 @@ describe('/api/error-items', () => {
             ['new', { practiceRecords: { none: { result: { not: null } } } }],
             ['reviewing', {
                 practiceRecords: { some: { result: { not: null } } },
-                OR: [{ masteryProbability: null }, { masteryProbability: { lt: 0.5 } }],
+                masteryLevel: { not: 2 },
             }],
-            ['mastered', { practiceRecords: { some: { result: { not: null } } }, masteryProbability: { gte: 0.5 } }],
+            ['mastered', { practiceRecords: { some: { result: { not: null } } }, masteryLevel: 2 }],
         ])('应该支持按复习状态 %s 筛选', async (status, condition) => {
             mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
             mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
