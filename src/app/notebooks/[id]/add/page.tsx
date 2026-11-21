@@ -57,7 +57,7 @@ export default function AddErrorPage() {
 
     return (
         <main className="min-h-screen">
-            <ProgressFeedback status={flow.analysisStep} />
+            <ProgressFeedback status={flow.analysisStep} subject={notebook.subjectKey || notebook.name} gradeSemester={notebook.stage} onCancel={flow.cancelProcessing} />
 
             <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" ? "max-w-6xl" : "max-w-4xl"}`}>
                 <PageHeader

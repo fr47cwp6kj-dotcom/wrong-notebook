@@ -21,6 +21,7 @@ export function KnowledgeGapPanel({ errorItemId }: { errorItemId: string }) {
     const [manual, setManual] = useState(false);
     const [loading, setLoading] = useState(true);
     const [showAll, setShowAll] = useState(false);
+    const [controller, setController] = useState<AbortController | null>(null);
     const endpoint = `/api/error-items/${errorItemId}/knowledge-gaps`;
     const load = useCallback(async () => {
         const data = await apiClient.get<{ diagnoses: GapView[] }>(endpoint);
@@ -33,18 +34,21 @@ export function KnowledgeGapPanel({ errorItemId }: { errorItemId: string }) {
 
     const action = async (body: Record<string, unknown>): Promise<boolean> => {
         setBusy(true); setError(''); setNotice('');
+        const requestController = new AbortController();
+        setController(requestController);
         try {
-            const result = await apiClient.post<{ status?: string; reason?: string; questions?: string[] }>(endpoint, body, { timeout: 180000 });
+            const result = await apiClient.post<{ status?: string; reason?: string; questions?: string[] }>(endpoint, body, { timeout: 180000, signal: requestController.signal });
             if (result.status === 'needs_more_information') {
                 setNotice(result.reason === 'GAP_NEEDS_WORK' ? t.gaps.missing : [result.reason, ...(result.questions || [])].join('\n'));
             }
             await load();
             return true;
         } catch (failure) {
+            if (requestController.signal.aborted) return false;
             const code = getApiErrorMessage(failure);
             setError(code === 'GAP_STALE' ? t.gaps.stale : code === 'GAP_CONFIRM_FIRST' ? t.gaps.confirmFirst : code === 'GAP_REVIEW_FIRST' ? t.gaps.reviewFirst : ['GAP_INVALID_DATA', 'GAP_EVIDENCE_MISMATCH'].includes(code || '') ? t.gaps.invalid : t.gaps.failed);
             return false;
-        } finally { setBusy(false); }
+        } finally { setBusy(false); setController(null); }
     };
 
     return <Card className="my-6 border-primary/30" id="knowledge-gaps">
@@ -56,6 +60,7 @@ export function KnowledgeGapPanel({ errorItemId }: { errorItemId: string }) {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} />{t.gaps.reviewedInput}</label>
             <div className="flex flex-wrap gap-2">
                 <Button disabled={!reviewed || busy || loading} onClick={() => action({ action: 'generate', reviewedInput: true, language })}>{busy ? t.gaps.saving : t.gaps.generate}</Button>
+                {busy && controller && <Button variant="outline" onClick={() => controller.abort()}>{t.common.progress.cancel}</Button>}
                 <Button variant="outline" disabled={busy} onClick={() => setManual(!manual)}>{t.gaps.manual}</Button>
                 <Button variant="ghost" asChild><Link href="/knowledge-units">{t.gaps.library}</Link></Button>
             </div>

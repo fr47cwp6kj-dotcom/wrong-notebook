@@ -18,27 +18,35 @@ interface RegenerateFigureButtonProps {
 export function RegenerateFigureButton({ errorItemId, onDone }: RegenerateFigureButtonProps) {
     const { t } = useLanguage();
     const [running, setRunning] = useState(false);
+    const [controller, setController] = useState<AbortController | null>(null);
 
     const handleClick = async () => {
         setRunning(true);
+        const requestController = new AbortController();
+        setController(requestController);
         try {
-            const figure = await apiClient.post<{ hasFigure: boolean; figureSvg: string | null }>(`/api/error-items/${errorItemId}/figure`, {});
+            const figure = await apiClient.post<{ hasFigure: boolean; figureSvg: string | null }>(`/api/error-items/${errorItemId}/figure`, {}, { signal: requestController.signal });
             onDone(figure);
             if (!figure.figureSvg) toast.warning(t.figure.noFigure);
         } catch (error) {
+            if (requestController.signal.aborted) return;
             const code = (error as { data?: { message?: string } })?.data?.message || "";
             const mapped = (t.errors as Record<string, unknown>)[code];
             frontendLogger.error('[RegenerateFigure]', 'Failed to regenerate figure', { code });
             toast.error(code === "NO_ORIGINAL_IMAGE" ? t.figure.noImage : typeof mapped === "string" ? mapped : t.figure.failed);
         } finally {
             setRunning(false);
+            setController(null);
         }
     };
 
     return (
+        <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={handleClick} disabled={running} className="flex items-center gap-2">
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shapes className="h-4 w-4" />}
             {running ? t.figure.regenerating : t.figure.regenerate}
         </Button>
+        {running && controller && <Button variant="ghost" size="sm" onClick={() => controller.abort()}>{t.common.progress.cancel}</Button>}
+        </div>
     );
 }

@@ -29,7 +29,7 @@ function notifyAiDailyLimit(data: unknown) {
 }
 
 async function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
-    const { params, headers, timeout = 60000, ...rest } = options;
+    const { params, headers, timeout = 60000, signal: externalSignal, ...rest } = options;
 
     let finalUrl = url;
     if (params) {
@@ -46,12 +46,15 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<T>
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
+        const signal = externalSignal
+            ? AbortSignal.any([externalSignal, controller.signal])
+            : controller.signal;
         const res = await fetch(finalUrl, {
             headers: {
                 ...defaultHeaders,
                 ...headers,
             },
-            signal: controller.signal,
+            signal,
             ...rest,
         });
         clearTimeout(timeoutId);
@@ -81,7 +84,7 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<T>
         }
     } catch (error) {
         clearTimeout(timeoutId);
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (error instanceof Error && error.name === 'AbortError' && !externalSignal?.aborted) {
             throw new ApiError(408, 'Request Timeout', {
                 message: 'AI_TIMEOUT_ERROR'
             });

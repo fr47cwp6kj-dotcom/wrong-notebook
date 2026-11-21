@@ -21,29 +21,37 @@ interface RegenerateAnswerButtonProps {
 export function RegenerateAnswerButton({ errorItemId, onDone }: RegenerateAnswerButtonProps) {
     const { t, language } = useLanguage();
     const [running, setRunning] = useState(false);
+    const [controller, setController] = useState<AbortController | null>(null);
 
     const handleClick = async () => {
         if (!(await confirmDialog(t.reanswerItem.confirm))) return;
         setRunning(true);
+        const requestController = new AbortController();
+        setController(requestController);
         try {
             const updated = await apiClient.post<{ answerText: string | null; analysis: string | null }>(
-                `/api/error-items/${errorItemId}/reanswer`, { language }, { timeout: REANSWER_TIMEOUT_MS }
+                `/api/error-items/${errorItemId}/reanswer`, { language }, { timeout: REANSWER_TIMEOUT_MS, signal: requestController.signal }
             );
             onDone(updated);
         } catch (error) {
+            if (requestController.signal.aborted) return;
             const code = (error as { data?: { message?: string } })?.data?.message || "";
             const mapped = (t.errors as Record<string, unknown>)[code];
             frontendLogger.error('[RegenerateAnswer]', 'Failed to regenerate answer', { code });
             toast.error(code === "NO_QUESTION_TEXT" ? t.reanswerItem.noQuestionText : typeof mapped === "string" ? mapped : t.reanswerItem.failed);
         } finally {
             setRunning(false);
+            setController(null);
         }
     };
 
     return (
+        <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={handleClick} disabled={running}>
             {running ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <WandSparkles className="h-4 w-4 mr-1" />}
             {running ? t.reanswerItem.running : t.reanswerItem.button}
         </Button>
+        {running && controller && <Button variant="outline" size="sm" onClick={() => controller.abort()}>{t.common.progress.cancel}</Button>}
+        </div>
     );
 }

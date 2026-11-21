@@ -64,6 +64,8 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
     const [isCropperOpen, setIsCropperOpen] = useState(false);
     const [isPreparingImage, setIsPreparingImage] = useState(false);
     const imageSelection = useRef(0);
+    const activeRequest = useRef<AbortController | null>(null);
+    const cancelledRequest = useRef(false);
     // 批量导入结果与框选的题目图片
     const [lastImported, setLastImported] = useState<ImportedQuestion | null>(null);
     const [batchBlobs, setBatchBlobs] = useState<Blob[] | null>(null);
@@ -159,6 +161,9 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
 
     const analyzeImage = async (file: File) => {
         const startTime = Date.now();
+        const requestController = new AbortController();
+        activeRequest.current = requestController;
+        cancelledRequest.current = false;
         frontendLogger.info(logPrefix, 'Starting analysis flow', { apiTimeout: aiTimeout, safetyTimeout });
         try {
             setAnalysisStep('compressing');
@@ -169,7 +174,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
                 imageBase64: base64Image,
                 language,
                 subjectId: analyzeSubjectId || undefined,
-            }, { timeout: aiTimeout });
+            }, { timeout: aiTimeout, signal: requestController.signal });
             if (!data || typeof data !== 'object') {
                 throw new Error('Invalid API response: data is null or not an object');
             }
@@ -179,8 +184,9 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
             frontendLogger.info(logPrefix, 'Analysis completed', { totalDuration: Date.now() - startTime });
         } catch (error) {
             frontendLogger.error(logPrefix, 'Analysis failed', { errorDuration: Date.now() - startTime, error: getErrorMessage(error) });
-            toast.error(getAnalysisErrorMessage(error, t));
+            if (!cancelledRequest.current) toast.error(getAnalysisErrorMessage(error, t));
         } finally {
+            if (activeRequest.current === requestController) activeRequest.current = null;
             setAnalysisStep('idle');
         }
     };
@@ -194,6 +200,9 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
     /** 文字题目由 AI 解答后导入 */
     const submitText = async (questionText: string) => {
         const startTime = Date.now();
+        const requestController = new AbortController();
+        activeRequest.current = requestController;
+        cancelledRequest.current = false;
         frontendLogger.info(logPrefix, 'Starting text-based analysis', { textLength: questionText.length });
         try {
             setAnalysisStep('analyzing');
@@ -202,7 +211,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
                 language,
                 subject: textNotebook?.name,
                 subjectId: textNotebook?.id,
-            }, { timeout: aiTimeout });
+            }, { timeout: aiTimeout, signal: requestController.signal });
 
             setAnalysisStep('processing');
             await handleParsed({
@@ -221,8 +230,9 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
             frontendLogger.info(logPrefix, 'Text analysis completed', { totalDuration: Date.now() - startTime });
         } catch (error) {
             frontendLogger.error(logPrefix, 'Text analysis failed', { errorDuration: Date.now() - startTime, error: getErrorMessage(error) });
-            toast.error(getAnalysisErrorMessage(error, t));
+            if (!cancelledRequest.current) toast.error(getAnalysisErrorMessage(error, t));
         } finally {
+            if (activeRequest.current === requestController) activeRequest.current = null;
             setAnalysisStep('idle');
         }
     };
@@ -265,6 +275,12 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
 
     return {
         step, cancelReview: () => setStep("upload"),
+        cancelProcessing: () => {
+            cancelledRequest.current = true;
+            activeRequest.current?.abort();
+            activeRequest.current = null;
+            setAnalysisStep('idle');
+        },
         analysisStep, setAnalysisStep, isPreparingImage, isBusy: isPreparingImage || analysisStep !== 'idle',
         parsedData, currentImage, aiTimeout,
         croppingImage, isCropperOpen, closeCropper: () => {

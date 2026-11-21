@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,10 @@ export type ProgressStatus = 'compressing' | 'uploading' | 'analyzing' | 'proces
 interface ProgressFeedbackProps {
     status: ProgressStatus;
     message?: string;
+    /** 可选的题目学段与学科，用于显示更贴合当前错题的等待提示。 */
+    gradeSemester?: string | null;
+    subject?: string | null;
+    onCancel?: () => void;
     className?: string;
 }
 
@@ -33,7 +38,7 @@ function formatElapsedTime(seconds: number): string {
     return parts.map((part) => String(part).padStart(2, '0')).join(':');
 }
 
-export function ProgressFeedback({ status, message, className }: ProgressFeedbackProps) {
+export function ProgressFeedback({ status, message, gradeSemester, subject, onCancel, className }: ProgressFeedbackProps) {
     // 确保只在客户端挂载完成后才渲染遮罩层，防止 SSR/Hydration 问题
     const isMounted = useIsClient();
 
@@ -41,29 +46,26 @@ export function ProgressFeedback({ status, message, className }: ProgressFeedbac
     if (!isMounted || status === 'idle') return null;
 
     // 进入 idle 后卸载计时器，新任务重新挂载；切换阶段时保留本次任务的起点。
-    return <ActiveProgressFeedback status={status} message={message} className={className} />;
+    return <ActiveProgressFeedback status={status} message={message} gradeSemester={gradeSemester} subject={subject} onCancel={onCancel} className={className} />;
 }
 
-function ActiveProgressFeedback({ status, message, className }: ActiveProgressFeedbackProps) {
+function ActiveProgressFeedback({ status, message, gradeSemester, subject, onCancel, className }: ActiveProgressFeedbackProps) {
     const { t } = useLanguage();
     const [startedAt] = useState(() => Date.now());
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [tipIndex, setTipIndex] = useState(0);
 
     useEffect(() => {
         const timer = setInterval(() => {
-            setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+            const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+            setElapsedSeconds(elapsed);
+            if (elapsed > 0 && elapsed % 5 === 0) setTipIndex((index) => index + 1);
         }, 1000);
         return () => clearInterval(timer);
     }, [startedAt]);
 
-    // 阶段接口没有提供真实百分比时，阶段内缓慢前进，避免长时间停在 50% 让人误以为卡死；不会提前显示完成。
-    const progress = status === 'analyzing'
-        ? Math.min(78, STAGE_ESTIMATES.analyzing + Math.floor(elapsedSeconds * 1.2))
-        : status === 'processing'
-            ? Math.min(92, STAGE_ESTIMATES.processing + Math.floor(elapsedSeconds * 0.5))
-            : status === 'saving'
-                ? Math.min(98, STAGE_ESTIMATES.saving + Math.floor(elapsedSeconds * 0.3))
-                : STAGE_ESTIMATES[status];
+    // 没有真实进度时保持阶段估值，避免用虚假的增长暗示任务已经接近完成。
+    const progress = STAGE_ESTIMATES[status];
     const estimateLabel = t.common.progress.estimated.replace('{percent}', String(progress));
 
     return (
@@ -92,6 +94,14 @@ function ActiveProgressFeedback({ status, message, className }: ActiveProgressFe
                         <span role="timer" aria-live="off">{t.common.progress.elapsed.replace('{time}', formatElapsedTime(elapsedSeconds))}</span>
                     </div>
                     <p className="text-xs text-muted-foreground">{t.common.progress.estimateHint}</p>
+                    <p className="rounded-md bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground" aria-live="polite">
+                        <span className="font-medium">{t.common.progress.tipLabel}</span>{' '}
+                        {gradeSemester ? `${gradeSemester}：` : ''}
+                        {subject === 'english' || subject === '英语' || subject === 'English'
+                            ? t.common.progress.vocabularyTips[tipIndex % t.common.progress.vocabularyTips.length]
+                            : t.common.progress.tips[tipIndex % t.common.progress.tips.length]}
+                    </p>
+                    {onCancel && <Button type="button" variant="outline" size="sm" onClick={onCancel}>{t.common.progress.cancel}</Button>}
                 </div>
             </div>
         </div>

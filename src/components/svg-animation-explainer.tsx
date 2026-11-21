@@ -15,14 +15,14 @@ const GENERATE_TIMEOUT_MS = 10 * 60 * 1000;
 
 // 合并同一页面中尚未结束的自动请求，避免重复挂载重复消耗 AI。
 const pendingAnimations = new Map<string, Promise<{ svgAnimation: string; svgAnimationSteps?: string | null }>>();
-function requestAnimation(errorItemId: string, language: Language, reuseExisting: boolean) {
+function requestAnimation(errorItemId: string, language: Language, reuseExisting: boolean, signal?: AbortSignal) {
     const key = `${errorItemId}:${language}`;
     const pending = pendingAnimations.get(key);
     if (pending) return pending;
     const request = apiClient.post<{ svgAnimation: string; svgAnimationSteps?: string | null }>(
         `/api/error-items/${errorItemId}/svg-animation`,
         { language, ...(reuseExisting ? { reuseExisting: true } : {}) },
-        { timeout: GENERATE_TIMEOUT_MS },
+        { timeout: GENERATE_TIMEOUT_MS, signal },
     ).finally(() => { pendingAnimations.delete(key); });
     pendingAnimations.set(key, request);
     return request;
@@ -57,15 +57,19 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, svgAnimationS
     const [generating, setGenerating] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const controller = useRef<AbortController | null>(null);
 
     const handleGenerate = useCallback(async (reuseExisting = false) => {
         attempted.current = true;
         setGenerating(true);
+        const requestController = new AbortController();
+        controller.current = requestController;
         setError(null);
         try {
-            const result = await requestAnimation(errorItemId, language, reuseExisting);
+            const result = await requestAnimation(errorItemId, language, reuseExisting, requestController.signal);
             if (mounted.current) onChange(language, result.svgAnimation, result.svgAnimationSteps ?? null);
         } catch (err) {
+            if (requestController.signal.aborted) return;
             const code = (err as { data?: { message?: string } })?.data?.message || "";
             const mapped = (t.errors as Record<string, unknown>)[code];
             frontendLogger.error('[SvgAnimation]', 'Failed to generate SVG animation', { code });
@@ -76,6 +80,7 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, svgAnimationS
             );
         } finally {
             if (mounted.current) setGenerating(false);
+            if (controller.current === requestController) controller.current = null;
         }
     }, [errorItemId, language, onChange, t.errors, t.svgAnimation]);
 
@@ -112,8 +117,10 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, svgAnimationS
                         {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Clapperboard className="mr-2 h-4 w-4" />}
                         {generating ? t.svgAnimation.generating : t.svgAnimation.generate}
                     </Button>
+                    {generating && <Button variant="ghost" size="sm" onClick={() => controller.current?.abort()}>{t.common.progress.cancel}</Button>}
                 </div>
                 {error && <p className="text-xs text-destructive mt-2">{error}</p>}
+                {generating && <p className="mt-2 rounded-md bg-muted/60 px-3 py-2 text-xs leading-5 text-muted-foreground">{t.svgAnimation.generatingHint}</p>}
                 <p className="mt-2 text-sm text-muted-foreground">{t.svgAnimation.hint}</p>
                 {hasOtherLanguage && <p className="mt-1 text-sm text-muted-foreground">{t.svgAnimation.otherLanguageAvailable}</p>}
             </div>
@@ -133,6 +140,7 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, svgAnimationS
                         {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                         <span>{generating ? t.svgAnimation.generating : t.svgAnimation.regenerate}</span>
                     </Button>
+                    {generating && <Button variant="ghost" size="sm" onClick={() => controller.current?.abort()}>{t.common.progress.cancel}</Button>}
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive" onClick={handleDelete} disabled={busy}>
                         <Trash2 className="h-3.5 w-3.5" />
                         <span>{t.svgAnimation.delete}</span>
@@ -140,6 +148,7 @@ export function SvgAnimationExplainer({ errorItemId, svgAnimation, svgAnimationS
                 </div>
             </div>
             {error && <p className="px-3 pt-2 text-xs text-destructive">{error}</p>}
+            {generating && <p className="px-3 pt-2 text-xs leading-5 text-muted-foreground">{t.svgAnimation.generatingHint}</p>}
             <div className="p-2 sm:p-3">
                 <SvgAnimationPlayer svg={svgAnimation} stepsJson={svgAnimationSteps} />
                 <p className="mx-auto mt-2 max-w-3xl text-sm text-muted-foreground">{t.svgAnimation.controlsHint}</p>

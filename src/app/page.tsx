@@ -86,7 +86,7 @@ function HomeContent() {
 
     return (
         <main className="min-h-screen">
-            <ProgressFeedback status={flow.analysisStep} />
+            <ProgressFeedback status={flow.analysisStep} subject={targetNotebook?.subjectKey || targetNotebook?.name} gradeSemester={targetNotebook?.stage} onCancel={flow.cancelProcessing} />
 
             <div className={`mx-auto space-y-8 px-4 py-6 md:px-10 md:py-10 ${flow.step === "review" ? "max-w-6xl" : "max-w-6xl"}`}>
                 {flow.step === "upload" && (

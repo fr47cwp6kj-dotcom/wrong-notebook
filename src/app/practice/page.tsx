@@ -61,6 +61,7 @@ function PracticeContent() {
     const [svgAnimation, setSvgAnimation] = useState<string | null>(null);
     const [svgAnimationSteps, setSvgAnimationSteps] = useState<string | null>(null);
     const processImageInputRef = useRef<HTMLInputElement>(null);
+    const generationController = useRef<AbortController | null>(null);
 
     useEffect(() => {
         if (!question) { sessionStorage.removeItem('learning-assistant-practice-context'); return; }
@@ -135,6 +136,8 @@ function PracticeContent() {
         if (!errorItemId) return;
 
         setLoading(true);
+        const requestController = new AbortController();
+        generationController.current = requestController;
         setError(null);
         setUserAnswer("");
         setNotes("");
@@ -158,12 +161,13 @@ function PracticeContent() {
                 language,
                 difficulty
                 , mode: practiceMode
-            }, { timeout });
+            }, { timeout, signal: requestController.signal });
             setQuestion(data);
             setGeneratedDifficulty(difficulty);
             setGeneratedAt(data.generatedAt ?? null);
             setQuestionVersion(v => v + 1);
         } catch (error) {
+            if (requestController.signal.aborted) return;
             frontendLogger.error('[Practice]', 'Failed to generate practice question', { error });
             const msg = getApiErrorMessage(error) || "";
 
@@ -190,6 +194,7 @@ function PracticeContent() {
             setError(errorMessage);
         } finally {
             setLoading(false);
+            if (generationController.current === requestController) generationController.current = null;
         }
     };
 
@@ -323,6 +328,7 @@ function PracticeContent() {
                                 </>
                             )}
                         </Button>
+                        {loading && <Button variant="outline" onClick={() => generationController.current?.abort()}>{t.common.progress.cancel}</Button>}
                     </div>
                 )}
             </div>
@@ -363,6 +369,7 @@ function PracticeContent() {
                                             </>
                                         )}
                                     </Button>
+                                    {loading && <Button variant="outline" size="sm" onClick={() => generationController.current?.abort()}>{t.common.progress.cancel}</Button>}
                                 </div>
                             </CardTitle>
                         </CardHeader>
