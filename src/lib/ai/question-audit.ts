@@ -61,7 +61,19 @@ export async function auditGeneratedQuestion(service: AIService, generated: Pars
         return 'programmatic' as const;
     }
     const reviewed = await service.reanswerQuestion(generated.questionText, language, subject);
-    if (matchAnswer(reviewed.answerText, generated.answerText) !== true) throw new Error('AI_QUESTION_REVIEW_FAILED');
+    if (matchAnswer(reviewed.answerText, generated.answerText) !== true) {
+        // 第二次解题常把“最终答案”写成等价的计算式。交给现有判题器比较语义，
+        // 仅在它也确认不等价时才拒绝，避免格式和解题侧重点造成假失败。
+        const equivalent = await service.gradeAnswer({
+            questionText: generated.questionText,
+            answerText: generated.answerText,
+            analysis: generated.analysis,
+            userAnswer: reviewed.answerText,
+            language,
+        });
+        if (!equivalent.correct) throw new Error('AI_QUESTION_REVIEW_FAILED');
+        return 'semantic_ai' as const;
+    }
     return 'independent_ai' as const;
 }
 

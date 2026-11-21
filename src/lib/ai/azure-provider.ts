@@ -1,3 +1,4 @@
+import { parseGapImageDataUrl } from '../knowledge-gaps';
 import type { GapInput, GapResult } from '../knowledge-gaps';
 import { parseGapResult } from './gap-result';
 import { AzureOpenAI } from "openai";
@@ -420,11 +421,16 @@ Knowledge Points: ${knowledgePoints.join(", ")}
         logger.info({ provider: 'Azure OpenAI' }, '知识漏洞诊断请求');
 
         try {
+            const image = parseGapImageDataUrl(input.imageDataUrl);
+            const userContent: AzureUserContent = image ? [
+                { type: 'text', text: '请结合原题图片核对图形、数轴、选项和标注，再根据文字证据给出候选知识漏洞诊断。' },
+                { type: 'image_url', image_url: { url: input.imageDataUrl! } },
+            ] : '请根据证据给出候选知识漏洞诊断。';
             const response = await withTruncationRetry((maxTokens) => this.client.chat.completions.create({
                 model: this.deployment,
                 messages: [
                     { role: "system", content: generateGapPrompt(input) },
-                    { role: "user", content: "请根据证据给出候选知识漏洞诊断。" }
+                    { role: "user", content: userContent }
                 ],
                 max_tokens: maxTokens,
             }), 8192, () => logger.warn('输出被截断，增加输出上限重试'));

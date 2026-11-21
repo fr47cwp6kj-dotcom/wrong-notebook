@@ -1,4 +1,4 @@
-# Cuoyin Agent · wrong-notebook fork
+# ZhiXi · knowledge-gap learning system
 
 Based on [margrop/wrong-notebook v2026.10.26](https://github.com/margrop/wrong-notebook/releases/tag/v2026.10.26), with the upstream MIT license and features preserved. Provenance: [UPSTREAM.json](UPSTREAM.json).
 

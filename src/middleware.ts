@@ -30,8 +30,8 @@ export async function middleware(req: NextRequest) {
 
         if (isAuthPage) {
             if (isAuth) {
-                logger.debug('Redirecting authenticated user to /');
-                return NextResponse.redirect(new URL("/", req.url));
+                logger.debug('Redirecting authenticated user to /home');
+                return NextResponse.redirect(new URL("/home", req.url));
             }
             return null;
         }
@@ -60,6 +60,8 @@ export async function middleware(req: NextRequest) {
             logger.warn({ userId: token?.id, path: req.nextUrl.pathname }, 'Non-admin user attempting to access admin area');
             return NextResponse.redirect(new URL("/", req.url));
         }
+
+        if (req.nextUrl.pathname === "/") return NextResponse.redirect(new URL("/home", req.url));
     } catch (e) {
         logger.error({ error: e }, 'Error processing token');
         return NextResponse.next();

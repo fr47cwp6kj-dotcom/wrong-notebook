@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">知隙</title>
+  <desc id="desc">一本打开的书，中间留出知识的缝隙</desc>
+  <rect width="512" height="512" rx="112" fill="#f7f5ee"/>
+  <circle cx="256" cy="256" r="194" fill="#eaf1ed"/>
+  <path d="M105 174c55-21 105-15 142 15 16 13 28 29 36 48v151c-12-21-26-37-43-49-36-27-79-32-135-13V174Z" fill="#146b63"/>
+  <path d="M407 174c-55-21-105-15-142 15-16 13-28 29-36 48v151c12-21 26-37 43-49 36-27 79-32 135-13V174Z" fill="#146b63"/>
+  <path d="M256 221l-13 30 16 27-14 26 12 28-14 30 13 29" fill="none" stroke="#f7f5ee" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"/>
+  <circle cx="256" cy="163" r="18" fill="#b65b25"/>
+</svg>

@@ -232,6 +232,7 @@ export function useQuestionImport({ logPrefix, analyzeSubjectId, textNotebook, f
         try {
             const result = await apiClient.post<{ id: string; duplicate?: boolean }>("/api/error-items", payload);
             toast.success(result.duplicate ? t.importFlow.duplicate : t.common.messages.saveSuccess);
+            window.dispatchEvent(new CustomEvent("wrong-notebook:data-updated", { detail: { type: "error-item-created", id: result.id } }));
             if (result.duplicate) {
                 router.push(`/error-items/${result.id}`);
             } else if (payload.subjectId) {

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, RefreshCw, CheckCircle, Eye, Send, XCircle, ArrowLeft } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle, Eye, Send, XCircle, ArrowLeft, Camera, X } from "lucide-react";
 import { ParsedQuestion } from "@/lib/ai/types";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { usePageTitle } from "@/lib/page-title";
@@ -16,6 +16,7 @@ import { AppConfig } from "@/types/api";
 import type { PracticeResult } from "@/types/api";
 import { PracticeResultCard } from "@/components/practice-result-card";
 import { QuestionFigure } from "@/components/question-figure";
+import { SvgAnimationExplainer } from "@/components/svg-animation-explainer";
 import { frontendLogger } from "@/lib/frontend-logger";
 import type { LastPractice } from "@/lib/last-practice";
 import { matchAnswer } from "@/lib/answer-match";
@@ -56,6 +57,16 @@ function PracticeContent() {
     const [hintLevel, setHintLevel] = useState(0);
     const [practiceHints, setPracticeHints] = useState<string[]>([]);
     const [riskWarning, setRiskWarning] = useState('');
+    const [processImageUrl, setProcessImageUrl] = useState<string | null>(null);
+    const [svgAnimation, setSvgAnimation] = useState<string | null>(null);
+    const [svgAnimationSteps, setSvgAnimationSteps] = useState<string | null>(null);
+    const processImageInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (!question) { sessionStorage.removeItem('learning-assistant-practice-context'); return; }
+        sessionStorage.setItem('learning-assistant-practice-context', JSON.stringify({ questionText: question.questionText, answerText: question.answerText, analysis: question.analysis, figureSvg: question.figureSvg ?? null, hintLevel }));
+        return () => sessionStorage.removeItem('learning-assistant-practice-context');
+    }, [question, hintLevel]);
 
     useEffect(() => {
         if (!errorItemId) return;
@@ -134,6 +145,9 @@ function PracticeContent() {
         setShowAnswer(false);
         setRevealedAnswer(false);
         setHintLevel(0);
+        setProcessImageUrl(null);
+        setSvgAnimation(null);
+        setSvgAnimationSteps(null);
         try {
             const timeout = config?.timeouts?.analyze || 180000;
             frontendLogger.info('[Practice]', 'Generating question', {
@@ -181,10 +195,15 @@ function PracticeContent() {
 
     // 本地能确定答案一致时直接判对；否则交给 AI 对照标准答案判定，失败时由用户自己选择结果
     const submitAnswer = async () => {
-        if (!userAnswer.trim() || !question || !errorItemId) return;
+        if ((!userAnswer.trim() && !notes.trim() && !processImageUrl) || !question || !errorItemId) return;
 
         setIsSubmitted(true);
         setRevealedAnswer(false);
+        if (!userAnswer.trim()) {
+            setIsCorrect(null);
+            setShowAnswer(true);
+            return;
+        }
         if (matchAnswer(userAnswer, question.answerText)) {
             setIsCorrect(true);
             setShowAnswer(true);
@@ -208,6 +227,15 @@ function PracticeContent() {
             setGrading(false);
             setShowAnswer(true);
         }
+    };
+
+    const editAnswer = () => {
+        setIsSubmitted(false);
+        setShowAnswer(false);
+        setRevealedAnswer(false);
+        setIsCorrect(null);
+        setGradeReason(null);
+        setGradeFailed(false);
     };
 
     // 不作答直接看答案，由用户自己判定结果
@@ -346,6 +374,16 @@ function PracticeContent() {
                             )}
                             <MarkdownRenderer content={question.questionText} className="font-medium" />
                             <QuestionFigure svg={question.figureSvg} />
+                            <SvgAnimationExplainer
+                                errorItemId={errorItemId}
+                                svgAnimation={svgAnimation}
+                                svgAnimationSteps={svgAnimationSteps}
+                                autoGenerate
+                                onChange={(_language, animation, steps) => {
+                                    setSvgAnimation(animation);
+                                    setSvgAnimationSteps(steps ?? null);
+                                }}
+                            />
                         </CardContent>
                     </Card>
 
@@ -370,8 +408,15 @@ function PracticeContent() {
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
                                 disabled={isSubmitted}
-                                rows={3}
+                                rows={10}
+                                className="min-h-56 resize-y text-base leading-7"
                             />
+                            <p className="text-xs text-muted-foreground">可以把每一步计算、卡住的位置和修改过程都写下来，提交前可反复修改。</p>
+                            <div className="rounded-xl border border-dashed border-border p-3">
+                                <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" disabled={isSubmitted} onClick={() => processImageInputRef.current?.click()}><Camera className="mr-2 h-4 w-4" />拍摄或上传作答过程</Button><span className="text-xs text-muted-foreground">可上传手写草稿、演算过程或答案照片</span></div>
+                                <input ref={processImageInputRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={event => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => setProcessImageUrl(typeof reader.result === 'string' ? reader.result : null); reader.readAsDataURL(file); }} />
+                                {processImageUrl && <div className="mt-3 flex items-start gap-3"><img src={processImageUrl} alt="本次作答过程" className="max-h-40 rounded-lg border object-contain" /><Button type="button" variant="ghost" size="icon" disabled={isSubmitted} onClick={() => setProcessImageUrl(null)}><X className="h-4 w-4" /><span className="sr-only">移除过程照片</span></Button></div>}
+                            </div>
                         </CardContent>
                     </Card>
 
@@ -388,7 +433,7 @@ function PracticeContent() {
                             <Button
                                 size="lg"
                                 onClick={submitAnswer}
-                                disabled={!userAnswer.trim()}
+                                disabled={!userAnswer.trim() && !notes.trim() && !processImageUrl}
                                 className="w-full md:w-auto"
                             >
                                 <Send className="mr-2 h-4 w-4" />
@@ -461,6 +506,10 @@ function PracticeContent() {
                         </Card>
                     )}
 
+                    {isSubmitted && !grading && <Button type="button" variant="outline" className="mx-auto flex" onClick={editAnswer}>
+                        继续修改作答
+                    </Button>}
+
                     {showAnswer && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-2">
                             <PracticeResultCard
@@ -475,6 +524,7 @@ function PracticeContent() {
                                 studentAnswer={userAnswer}
                                 revealedAnswer={revealedAnswer}
                                 mode={practiceMode}
+                                processImageUrl={processImageUrl || undefined}
                             />
                             <Card className="bg-muted/50">
                                 <CardHeader>

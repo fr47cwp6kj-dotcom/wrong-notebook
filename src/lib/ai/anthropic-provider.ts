@@ -1,3 +1,4 @@
+import { parseGapImageDataUrl } from '../knowledge-gaps';
 import type { GapInput, GapResult } from '../knowledge-gaps';
 import { parseGapResult } from './gap-result';
 import Anthropic from "@anthropic-ai/sdk";
@@ -275,7 +276,12 @@ export class AnthropicProvider implements AIService {
         logger.info({ provider: 'Anthropic' }, '知识漏洞诊断请求');
 
         try {
-            const text = await this.complete(generateGapPrompt(input), "请根据证据给出候选知识漏洞诊断。", 8192);
+            const image = parseGapImageDataUrl(input.imageDataUrl);
+            const content: UserContent = image ? [
+                imageBlock(image.base64, image.mimeType),
+                { type: 'text', text: '请结合原题图片核对图形、数轴、选项和标注，再根据文字证据给出候选知识漏洞诊断。' },
+            ] : '请根据证据给出候选知识漏洞诊断。';
+            const text = await this.complete(generateGapPrompt(input), content, 8192);
             return parseGapResult(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, '知识漏洞诊断失败');

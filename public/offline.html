@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#4f46e5">
-    <title>智能错题本</title>
+    <meta name="theme-color" content="#146b63">
+    <title>知隙</title>
     <style>
         :root { color-scheme: light dark; }
         body {
@@ -14,20 +14,20 @@
             align-items: center;
             justify-content: center;
             font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-            background: #f8fafc;
-            color: #0f172a;
+            background: #f7f5ee;
+            color: #20221e;
         }
         main { max-width: 360px; padding: 32px 16px; text-align: center; }
         img { width: 96px; height: 96px; border-radius: 22px; }
         h1 { font-size: 20px; margin: 24px 0 8px; }
-        p { margin: 0 0 24px; color: #475569; line-height: 1.6; }
+        p { margin: 0 0 24px; color: #5f655e; line-height: 1.6; }
         button {
             border: 0;
             border-radius: 8px;
             padding: 10px 24px;
             font-size: 16px;
             color: #fff;
-            background: #4f46e5;
+            background: #146b63;
         }
         @media (prefers-color-scheme: dark) {
             body { background: #0f172a; color: #f1f5f9; }
@@ -45,9 +45,9 @@
     <script>
         if (!/^zh/i.test(navigator.language || '')) {
             document.documentElement.lang = 'en';
-            document.title = 'Wrong Notebook';
+            document.title = 'ZhiXi';
             document.getElementById('title').textContent = 'Cannot reach the server';
-            document.getElementById('message').textContent = 'Check your network connection or make sure the Wrong Notebook server is running, then try again.';
+            document.getElementById('message').textContent = 'Check your network connection or make sure the ZhiXi server is running, then try again.';
             document.getElementById('retry').textContent = 'Retry';
         }
         var lastReloadAt = 0;

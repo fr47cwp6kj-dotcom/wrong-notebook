@@ -56,7 +56,14 @@ function ActiveProgressFeedback({ status, message, className }: ActiveProgressFe
         return () => clearInterval(timer);
     }, [startedAt]);
 
-    const progress = STAGE_ESTIMATES[status];
+    // 阶段接口没有提供真实百分比时，阶段内缓慢前进，避免长时间停在 50% 让人误以为卡死；不会提前显示完成。
+    const progress = status === 'analyzing'
+        ? Math.min(78, STAGE_ESTIMATES.analyzing + Math.floor(elapsedSeconds * 1.2))
+        : status === 'processing'
+            ? Math.min(92, STAGE_ESTIMATES.processing + Math.floor(elapsedSeconds * 0.5))
+            : status === 'saving'
+                ? Math.min(98, STAGE_ESTIMATES.saving + Math.floor(elapsedSeconds * 0.3))
+                : STAGE_ESTIMATES[status];
     const estimateLabel = t.common.progress.estimated.replace('{percent}', String(progress));
 
     return (
@@ -77,7 +84,7 @@ function ActiveProgressFeedback({ status, message, className }: ActiveProgressFe
                         <h3 className="text-lg font-semibold tracking-tight" aria-live="polite">
                             {message || t.common.progress[status]}
                         </h3>
-                        <Progress value={progress} aria-label={estimateLabel} aria-valuetext={estimateLabel} className="h-2 w-full" />
+                        <Progress value={progress} aria-label={estimateLabel} aria-valuetext={estimateLabel} className="h-2 w-full [&>div]:animate-pulse" />
                     </div>
 
                     <div className="flex w-full flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground tabular-nums">

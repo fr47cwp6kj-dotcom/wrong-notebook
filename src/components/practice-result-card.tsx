@@ -24,10 +24,11 @@ interface PracticeResultCardProps {
     studentAnswer?: string;
     revealedAnswer?: boolean;
     mode?: 'normal' | 'warning' | 'exam';
+    processImageUrl?: string;
 }
 
 /** 举一反三结束后由用户确认结果并保存 */
-export function PracticeResultCard({ errorItemId, suggested, question, difficulty, independentCorrect, hintLevel, review = false, studentAnswer = '', revealedAnswer = false, mode = 'normal' }: PracticeResultCardProps) {
+export function PracticeResultCard({ errorItemId, suggested, question, difficulty, independentCorrect, hintLevel, review = false, studentAnswer = '', revealedAnswer = false, mode = 'normal', processImageUrl }: PracticeResultCardProps) {
     const { t } = useLanguage();
     const [result, setResult] = useState<PracticeResult | null>(suggested ?? 'not_attempted');
     const [saving, setSaving] = useState(false);
@@ -52,6 +53,7 @@ export function PracticeResultCard({ errorItemId, suggested, question, difficult
                 questionText: question.questionText,
                 answerText: question.answerText,
                 analysis: question.analysis,
+                originalImageUrl: processImageUrl || undefined,
                 figureSvg: question.figureSvg ?? null,
             });
             setSaved(true);

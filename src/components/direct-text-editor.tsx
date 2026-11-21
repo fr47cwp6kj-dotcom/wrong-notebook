@@ -279,7 +279,7 @@ export function DirectTextEditor({ onSubmit, defaultNotebookId, defaultNotebookN
                     <Button
                         onClick={handleSubmit}
                         disabled={!questionText.trim() || !subjectId || isSaving}
-                        className="w-full bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-700 hover:to-violet-600 text-white font-medium"
+                        className="w-full bg-foreground text-background hover:bg-foreground/90 font-medium"
                         size="lg"
                     >
                         {isSaving ? (

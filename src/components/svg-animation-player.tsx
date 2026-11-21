@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Maximize, Minimize, Pause, Play, RotateCcw } from "lucide-react";
+import { Maximize, Minimize, Pause, Play, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { buildSvgAnimationDocument, getSvgAnimationDuration, getSvgAspectRatio, parseSvgAnimationSteps } from "@/lib/svg-animation";
@@ -26,7 +26,7 @@ function formatTime(seconds: number): string {
  * 其中的脚本和事件属性都不会执行。
  */
 export function SvgAnimationPlayer({ svg, stepsJson }: SvgAnimationPlayerProps) {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const containerRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
@@ -34,6 +34,7 @@ export function SvgAnimationPlayer({ svg, stepsJson }: SvgAnimationPlayerProps) 
     const [current, setCurrent] = useState(0);
     const [nativeFullscreen, setNativeFullscreen] = useState(false);
     const [overlayFullscreen, setOverlayFullscreen] = useState(false);
+    const [voiceEnabled, setVoiceEnabled] = useState(false);
     const fullscreen = nativeFullscreen || overlayFullscreen;
 
     const steps = useMemo<SvgAnimationStep[]>(() => parseSvgAnimationSteps(stepsJson), [stepsJson]);
@@ -50,6 +51,21 @@ export function SvgAnimationPlayer({ svg, stepsJson }: SvgAnimationPlayerProps) 
     const duration = useMemo(() => getSvgAnimationDuration(svg), [svg]);
     const aspectRatio = useMemo(() => getSvgAspectRatio(svg), [svg]);
     const srcDoc = useMemo(() => buildSvgAnimationDocument(svg), [svg]);
+
+    const speakStep = useCallback((step: SvgAnimationStep | undefined) => {
+        if (!step || typeof window === "undefined" || !window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(`${step.index}. ${step.title}`);
+        utterance.lang = language === "zh" ? "zh-CN" : "en-US";
+        utterance.rate = 0.95;
+        window.speechSynthesis.speak(utterance);
+    }, [language]);
+
+    useEffect(() => () => { window.speechSynthesis?.cancel(); }, []);
+
+    useEffect(() => {
+        if (voiceEnabled && activeStepIndex >= 0) speakStep(steps[activeStepIndex]);
+    }, [activeStepIndex, speakStep, steps, voiceEnabled]);
 
     /** CSS 动画（若有）跟随 SMIL 时间轴 */
     const cssAnimations = useCallback(() => {
@@ -185,6 +201,22 @@ export function SvgAnimationPlayer({ svg, stepsJson }: SvgAnimationPlayerProps) 
                 </div>
             )}
             <div className={cn("mx-auto flex w-full items-center gap-2", fullscreen ? "max-w-5xl text-white" : "max-w-3xl")}>
+                {steps.length > 0 && <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn("h-8 gap-1 px-2", fullscreen && "text-white hover:bg-white/20 hover:text-white")}
+                    onClick={() => {
+                        const next = !voiceEnabled;
+                        setVoiceEnabled(next);
+                        if (next) speakStep(steps[Math.max(0, activeStepIndex)]);
+                        else window.speechSynthesis?.cancel();
+                    }}
+                    aria-label={voiceEnabled ? t.svgAnimation.voiceOff : t.svgAnimation.voiceOn}
+                    title={voiceEnabled ? t.svgAnimation.voiceOff : t.svgAnimation.voiceOn}
+                >
+                    {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                    <span className="hidden sm:inline">{voiceEnabled ? t.svgAnimation.voiceOff : t.svgAnimation.voiceOn}</span>
+                </Button>}
                 <Button
                     variant="outline"
                     size="sm"

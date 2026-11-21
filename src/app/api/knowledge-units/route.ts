@@ -27,9 +27,11 @@ export async function GET() {
             const allowedItems = new Set(current.map(d => d.errorItemId));
             const evidence = learningEvents.filter(event => event.errorItemId && allowedItems.has(event.errorItemId));
             const unified = evidence.length ? summarizeLearningEvidence(evidence) : null;
-            const verificationStage = unified?.stage ?? legacy.stage;
-            const summary = { attempts: unified?.attempts ?? legacy.attempts, correct: legacy.correct,
-                contexts: unified?.contexts ?? legacy.contexts, mastered: verificationStage === 'temporary' || verificationStage === 'stable' };
+            // 迁移期的通用事件可能只有诊断或提示，不能覆盖已有的小练证据。
+            const hasUsableUnifiedEvidence = (unified?.contexts ?? 0) > 0;
+            const verificationStage = hasUsableUnifiedEvidence ? unified!.stage : legacy.stage;
+            const summary = { attempts: hasUsableUnifiedEvidence ? unified!.attempts : legacy.attempts, correct: legacy.correct,
+                contexts: hasUsableUnifiedEvidence ? unified!.contexts : legacy.contexts, mastered: verificationStage === 'temporary' || verificationStage === 'stable' };
             const confusable = units.filter(other => other.id !== unit.id && other.stage === unit.stage && other.subject === unit.subject
                 && unitTextSimilarity(other.triggerRule, unit.triggerRule) >= 0.65
                 && unitTextSimilarity(other.boundary, unit.boundary) < 0.94)

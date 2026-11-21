@@ -18,6 +18,7 @@ import { getDefaultPaperLevel } from "@/lib/paper-level";
 import { findOrCreatePaperImage, MAX_PAPER_IMAGE_LENGTH } from "@/lib/paper-image";
 import { getAppTimeZone } from "@/lib/config";
 import { QuestionKnowledgePointsSchema } from "@/lib/ai/schema";
+import { autoGenerateKnowledgeGap } from "@/lib/auto-knowledge-gap";
 
 const logger = createLogger('api:error-items');
 
@@ -245,7 +246,17 @@ export async function POST(req: Request) {
         });
         const duplicate = 'duplicate' in result && result.duplicate;
         if (duplicate) scheduleMasteryEvaluation([result.id]);
-        return NextResponse.json(result, { status: duplicate ? 200 : 201 });
+        let knowledgeGapStatus: 'created' | 'already_exists' | 'needs_evidence' | 'rate_limited' | 'failed' | undefined;
+        if (!duplicate) {
+            try {
+                knowledgeGapStatus = await autoGenerateKnowledgeGap(user, result.id);
+            } catch (error) {
+                // AI 诊断失败不能让已保存的错题丢失；学生仍可稍后从详情页重新诊断。
+                knowledgeGapStatus = 'failed';
+                logger.warn({ error, errorItemId: result.id }, 'Automatic knowledge-gap diagnosis failed');
+            }
+        }
+        return NextResponse.json({ ...result, knowledgeGapStatus }, { status: duplicate ? 200 : 201 });
     } catch (error) {
         logger.error({
             error,

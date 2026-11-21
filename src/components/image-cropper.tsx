@@ -6,6 +6,7 @@ import ReactCrop from "react-image-crop";
 import type { Crop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { Button } from "@/components/ui/button";
+import { RotateCw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RegionSelector } from "@/components/region-selector";
 import { ZoomControls } from "@/components/zoom-controls";
@@ -40,6 +41,9 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
     const [crop, setCrop] = useState<Crop>();
     const imgRef = useRef<HTMLImageElement>(null);
     const [mode, setModeState] = useState<CropMode>("single");
+    const [rotationState, setRotationState] = useState<{ src: string; data: string; angle: number }>({ src: imageSrc, data: imageSrc, angle: 0 });
+    const activeImageSrc = rotationState.src === imageSrc ? rotationState.data : imageSrc;
+    const rotation = rotationState.src === imageSrc ? rotationState.angle : 0;
     const { containerRef, zoom, imageStyle, measureImage, zoomIn, zoomOut, reset: resetZoom } = useImageZoom(FIT_STYLE[mode]);
     // 换图后回到 100%
     useEffect(() => {
@@ -50,9 +54,9 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
         setModeState(next);
     };
     // 框选结果与图片绑定，换图后自动清空
-    const [regionState, setRegionState] = useState<{ src: string; regions: ImageRegion[] }>({ src: imageSrc, regions: [] });
-    const regions = regionState.src === imageSrc ? regionState.regions : [];
-    const setRegions = (next: ImageRegion[]) => setRegionState({ src: imageSrc, regions: next });
+    const [regionState, setRegionState] = useState<{ src: string; regions: ImageRegion[] }>({ src: activeImageSrc, regions: [] });
+    const regions = regionState.src === activeImageSrc ? regionState.regions : [];
+    const setRegions = (next: ImageRegion[]) => setRegionState({ src: activeImageSrc, regions: next });
     const multiImgRef = useRef<HTMLImageElement>(null);
 
     const handleMultiConfirm = async () => {
@@ -89,6 +93,26 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
         onClose();
     };
 
+    const rotateImage = () => {
+        const image = new Image();
+        image.onload = () => {
+            const canvas = document.createElement("canvas");
+            const quarterTurns = ((rotation / 90) + 1) % 4;
+            const swapsSides = quarterTurns % 2 === 1;
+            canvas.width = swapsSides ? image.naturalHeight : image.naturalWidth;
+            canvas.height = swapsSides ? image.naturalWidth : image.naturalHeight;
+            const context = canvas.getContext("2d");
+            if (!context) return;
+            context.translate(canvas.width / 2, canvas.height / 2);
+            context.rotate((quarterTurns * Math.PI) / 2);
+            context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+            setRotationState({ src: imageSrc, data: canvas.toDataURL("image/jpeg", 0.95), angle: quarterTurns * 90 });
+            setCrop({ unit: "%", x: 0, y: 0, width: 100, height: 100 });
+            setRegions([]);
+        };
+        image.src = activeImageSrc;
+    };
+
     const handleConfirm = async () => {
         if (!imgRef.current?.naturalWidth) return;
         // 没有有效选框（如只点了一下）时使用整张图片
@@ -117,7 +141,7 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
                             {mode !== "single" ? (
                                 <RegionSelector
                                     ref={multiImgRef}
-                                    imageSrc={imageSrc}
+                                    imageSrc={activeImageSrc}
                                     regions={regions}
                                     onChange={setRegions}
                                     imageStyle={imageStyle}
@@ -129,7 +153,7 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
                                     <img
                                         ref={imgRef}
                                         alt="Crop me"
-                                        src={imageSrc}
+                                        src={activeImageSrc}
                                         onLoad={onImageLoad}
                                         onError={handleImageError}
                                         style={imageStyle}
@@ -138,7 +162,10 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete, onMultiC
                             )}
                         </div>
                     </div>
-                    <div className="absolute right-3 top-3">
+                    <div className="absolute right-3 top-3 flex items-center gap-2">
+                        <Button type="button" variant="secondary" size="icon" onClick={rotateImage} aria-label="旋转图片" title="旋转图片">
+                            <RotateCw className="h-4 w-4" />
+                        </Button>
                         <ZoomControls zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={resetZoom} />
                     </div>
                 </div>

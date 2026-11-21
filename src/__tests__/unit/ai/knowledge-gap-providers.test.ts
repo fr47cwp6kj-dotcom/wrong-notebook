@@ -36,4 +36,24 @@ describe('所有提供商使用同一知识漏洞输出契约', () => {
     for (const [name, create] of providers) it(name, async () => {
         expect(await create().diagnoseKnowledgeGaps(input)).toEqual(result);
     });
+
+    it('诊断时把原题图片交给支持多模态的提供商', async () => {
+        const imageInput: GapInput = { ...input, imageDataUrl: 'data:image/png;base64,aW1hZ2U=' };
+
+        await new OpenAIProvider({ apiKey: 'test-only' }).diagnoseKnowledgeGaps(imageInput);
+        expect((mocks.openai.mock.lastCall?.[0] as { messages: Array<{ content: unknown }> }).messages[1].content)
+            .toEqual(expect.arrayContaining([expect.objectContaining({ type: 'image_url', image_url: { url: imageInput.imageDataUrl } })]));
+
+        await new AzureOpenAIProvider({ apiKey: 'test-only', endpoint: 'https://example.test', deploymentName: 'test' }).diagnoseKnowledgeGaps(imageInput);
+        expect((mocks.openai.mock.lastCall?.[0] as { messages: Array<{ content: unknown }> }).messages[1].content)
+            .toEqual(expect.arrayContaining([expect.objectContaining({ type: 'image_url', image_url: { url: imageInput.imageDataUrl } })]));
+
+        await new AnthropicProvider({ apiKey: 'test-only' }).diagnoseKnowledgeGaps(imageInput);
+        expect((mocks.anthropic.mock.lastCall?.[0] as { messages: Array<{ content: unknown }> }).messages[0].content)
+            .toEqual(expect.arrayContaining([expect.objectContaining({ type: 'image' })]));
+
+        await new GeminiProvider({ apiKey: 'test-only' }).diagnoseKnowledgeGaps(imageInput);
+        expect((mocks.gemini.mock.lastCall?.[0] as { contents: unknown }).contents)
+            .toEqual(expect.arrayContaining([expect.objectContaining({ inlineData: { mimeType: 'image/png', data: 'aW1hZ2U=' } })]));
+    });
 });

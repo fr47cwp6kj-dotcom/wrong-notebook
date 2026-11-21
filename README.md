@@ -1,4 +1,4 @@
-# 错因 Agent · wrong-notebook 复刻增强版
+# 知隙 · 知识漏洞驱动的学习系统
 
 基于 [margrop/wrong-notebook v2026.10.26](https://github.com/margrop/wrong-notebook/releases/tag/v2026.10.26)，保留上游错题本功能，并加入原 V1 的知识漏洞诊断流程。保留上游 MIT 许可，来源与源码摘要见 [UPSTREAM.json](UPSTREAM.json)。
 

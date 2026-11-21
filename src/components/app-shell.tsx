@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 /** 登录、注册与打印页不显示导航 */
 const BARE_PATHS = [/^\/login/, /^\/register/, /^\/setup/, /^\/print-preview/, /^\/exams\/[^/]+\/print/];
 
-type NavKey = "home" | "notebooks" | "review" | "stats" | "exams" | "units";
+type NavKey = "home" | "entry" | "notebooks" | "review" | "stats" | "exams" | "units";
 
 interface NavItem {
     key: NavKey;
@@ -25,17 +25,18 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-    { key: "units", href: "/knowledge-units", icon: BookOpen, match: (p) => p.startsWith("/knowledge-units") },
-    { key: "home", href: "/", icon: PlusCircle, match: (p) => p === "/" },
+    { key: "home", href: "/home", icon: BookOpen, match: (p) => p === "/" || p === "/home" },
+    { key: "entry", href: "/entry", icon: PlusCircle, match: (p) => p.startsWith("/entry") },
+    { key: "review", href: "/review", icon: CalendarCheck, match: (p) => p.startsWith("/review") },
     {
         key: "notebooks",
         href: "/notebooks",
         icon: BookOpen,
         match: (p) => p.startsWith("/notebooks") || p.startsWith("/error-items") || p.startsWith("/practice"),
     },
-    { key: "review", href: "/review", icon: CalendarCheck, match: (p) => p.startsWith("/review") },
-    { key: "stats", href: "/stats", icon: BarChart3, match: (p) => p.startsWith("/stats") || p.startsWith("/tags") },
+    { key: "units", href: "/knowledge-units", icon: BookOpen, match: (p) => p.startsWith("/knowledge-units") },
     { key: "exams", href: "/exams", icon: FileText, match: (p) => p.startsWith("/exams") },
+    { key: "stats", href: "/stats", icon: BarChart3, match: (p) => p.startsWith("/stats") || p.startsWith("/tags") },
 ];
 
 /** 全局导航外壳：桌面端顶部导航栏，移动端顶部标题栏 + 底部标签栏 */
@@ -54,73 +55,50 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const userName = session?.user?.name || session?.user?.email || "";
 
     return (
-        <div className="min-h-screen">
-            <header className="sticky top-0 z-40 border-b bg-card/80 backdrop-blur-md supports-[backdrop-filter]:bg-card/70 print:hidden">
-                <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 md:h-16 md:px-8">
-                    <Link href="/" className="flex shrink-0 items-center gap-2">
-                        <Image src="/icons/icon.png" alt="" width={32} height={32} className="rounded-lg" priority unoptimized />
-                        <span className="text-base font-semibold tracking-tight">{t.pageTitle.base}</span>
-                    </Link>
-
-                    <nav className="ml-4 hidden items-center gap-1 md:flex">
-                        {NAV_ITEMS.map((item) => {
-                            const active = item.match(pathname);
-                            const Icon = item.icon;
-                            return (
-                                <Link
-                                    key={item.key}
-                                    href={item.href}
-                                    className={cn(
-                                        "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                                        active
-                                            ? "bg-accent text-accent-foreground"
-                                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                    )}
-                                    aria-current={active ? "page" : undefined}
-                                >
-                                    <Icon className="h-4 w-4" />
-                                    {t.nav[item.key]}
-                                </Link>
-                            );
-                        })}
-                    </nav>
-
-                    <div className="ml-auto flex items-center gap-1">
-                        {userName && (
-                            <span className="mr-2 hidden max-w-40 items-center gap-2 truncate text-sm text-muted-foreground lg:flex">
-                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                                    {userName.slice(0, 1).toUpperCase()}
-                                </span>
-                                <span className="truncate">{userName}</span>
-                            </span>
-                        )}
-                        {isAdmin && (
-                            <Link href="/admin" title={t.nav.admin}>
-                                <Button variant="ghost" size="icon" className="rounded-full">
-                                    <Shield className="h-5 w-5" />
-                                    <span className="sr-only">{t.nav.admin}</span>
-                                </Button>
+        <div className="min-h-screen md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
+            <aside className="hidden min-h-screen border-r border-border/80 bg-background px-4 py-7 md:flex md:flex-col print:hidden">
+                <Link href="/home" className="flex items-center gap-2 px-2">
+                    <Image src="/icons/icon.png" alt="" width={30} height={30} className="rounded-[9px]" priority unoptimized />
+                    <span className="text-base font-semibold tracking-tight">{t.pageTitle.base}</span>
+                </Link>
+                <p className="mt-8 px-2 text-xs text-muted-foreground">学习</p>
+                <nav className="mt-2 grid gap-1">
+                    {NAV_ITEMS.map((item) => {
+                        const active = item.match(pathname);
+                        const Icon = item.icon;
+                        return (
+                            <Link
+                                key={item.key}
+                                href={item.href}
+                                className={cn(
+                                    "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                                    active
+                                        ? "bg-accent text-accent-foreground"
+                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                                aria-current={active ? "page" : undefined}
+                            >
+                                <Icon className="h-4 w-4" />
+                                {item.key === "home" ? "学习首页" : item.key === "entry" ? "录入错题" : t.nav[item.key]}
                             </Link>
-                        )}
+                        );
+                    })}
+                </nav>
+                <div className="mt-auto space-y-2 border-t border-border/80 pt-4">
+                    {userName && <p className="truncate px-2 text-sm text-muted-foreground">{userName}</p>}
+                    <div className="flex items-center gap-1">
+                        {isAdmin && <Link href="/admin" title={t.nav.admin}><Button variant="ghost" size="icon"><Shield className="h-4 w-4" /></Button></Link>}
                         <SettingsDialog />
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full text-muted-foreground hover:text-destructive"
-                            onClick={() => signOut({ callbackUrl: "/login" })}
-                            title={t.app.logout}
-                        >
-                            <LogOut className="h-5 w-5" />
-                        </Button>
+                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => signOut({ callbackUrl: "/login" })} title={t.app.logout}><LogOut className="h-4 w-4" /></Button>
                     </div>
                 </div>
-            </header>
+            </aside>
 
             <div className="pb-20 md:pb-0">{children}</div>
 
             <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t bg-card/90 backdrop-blur-md md:hidden print:hidden">
                 <div className="grid h-16 grid-cols-6">
-                    {NAV_ITEMS.map((item) => {
+                    {NAV_ITEMS.filter((item) => item.key !== "entry").map((item) => {
                         const active = item.match(pathname);
                         const Icon = item.icon;
                         return (

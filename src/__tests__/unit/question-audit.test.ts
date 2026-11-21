@@ -6,9 +6,10 @@ function makeQuestion(questionText: string, answerText: string): ParsedQuestion 
     return { questionText, answerText, analysis: '解析内容', figureSvg: null } as ParsedQuestion;
 }
 
-function makeService(reviewAnswer: string) {
+function makeService(reviewAnswer: string, semanticallyCorrect = false) {
     return {
         reanswerQuestion: vi.fn().mockResolvedValue(makeQuestion('复核题干', reviewAnswer)),
+        gradeAnswer: vi.fn().mockResolvedValue({ correct: semanticallyCorrect, reason: '等价结论' }),
     } as unknown as AIService;
 }
 
@@ -38,6 +39,15 @@ describe('auditGeneratedQuestion', () => {
         const service = makeService('与生成答案不同的结果');
         await expect(auditGeneratedQuestion(service, makeQuestion('阅读题干', '生成答案'), '原题', 'zh', null))
             .rejects.toThrow('AI_QUESTION_REVIEW_FAILED');
+    });
+
+    it('复核写法不同但语义判定等价时通过', async () => {
+        const service = makeService('16 - 6 = 10cm', true);
+        const mode = await auditGeneratedQuestion(service, makeQuestion('求 BD 的长度', '10 cm'), '原题', 'zh', null);
+        expect(mode).toBe('semantic_ai');
+        expect(service.gradeAnswer).toHaveBeenCalledWith(expect.objectContaining({
+            questionText: '求 BD 的长度', answerText: '10 cm', userAnswer: '16 - 6 = 10cm',
+        }));
     });
 });
 

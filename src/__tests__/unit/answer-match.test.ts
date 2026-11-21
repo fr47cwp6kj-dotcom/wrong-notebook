@@ -17,6 +17,8 @@ describe('matchAnswer', () => {
         ['B', 'B. 3 cm'],
         ['(c)', 'C'],
         ['ca', 'AC'],
+        ['10 cm', 'BD = 10cm'],
+        ['x=6', '答案：x = 6'],
     ])('%s 与 %s 一致时判对', (user, correct) => {
         expect(matchAnswer(user, correct)).toBe(true);
     });

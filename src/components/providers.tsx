@@ -7,6 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { BackgroundTasksButton } from "@/components/background-tasks-button";
 import { FeedbackHost } from "@/components/ui/feedback-host";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { LearningAssistant } from "@/components/learning-assistant";
 
 export function Providers({ children, timeZone }: { children: React.ReactNode; timeZone?: string }) {
     return (
@@ -17,6 +18,7 @@ export function Providers({ children, timeZone }: { children: React.ReactNode; t
                     <BackgroundTasksButton />
                     <FeedbackHost />
                     <ServiceWorkerRegister />
+                    <LearningAssistant />
                 </TimeZoneProvider>
             </LanguageProvider>
         </SessionProvider>

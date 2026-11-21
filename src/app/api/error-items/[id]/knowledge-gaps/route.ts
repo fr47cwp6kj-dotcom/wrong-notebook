@@ -103,6 +103,7 @@ export async function POST(req: Request, { params }: Context) {
                 questionText: item.questionText || '', wrongAnswerText: item.wrongAnswerText || '',
                 answerText: item.answerText || '', analysis: item.analysis || '', ...scope,
                 language: body.language, units: [{ name: candidate.unitName, triggerRule: candidate.triggerRule, boundary: candidate.boundary }], dialogue,
+                imageDataUrl: item.originalImageUrl || undefined,
             }));
             const nextQuestion = result.status === 'needs_more_information' ? result.questions[0] : result.diagnoses[0]?.questionsToStudent[0];
             const hypothesis = result.status === 'candidate_diagnosis' ? result.diagnoses[0]?.hypothesis : null;
@@ -126,6 +127,7 @@ export async function POST(req: Request, { params }: Context) {
                 const result = GapResultSchema.parse(await getAIService().diagnoseKnowledgeGaps({
                     questionText: item.questionText, wrongAnswerText: item.wrongAnswerText,
                     answerText: item.answerText || '', analysis: item.analysis || '', ...scope, language: body.language, units,
+                    imageDataUrl: item.originalImageUrl || undefined,
                 }));
                 if (result.status === 'needs_more_information') return NextResponse.json(result);
                 candidates = result.diagnoses;

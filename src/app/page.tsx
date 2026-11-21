@@ -6,7 +6,6 @@ import { Camera, PenLine, Sparkles } from "lucide-react";
 import { BatchImportPanel } from "@/components/batch-import-panel";
 import { CorrectionEditor } from "@/components/correction-editor";
 import { DirectTextEditor } from "@/components/direct-text-editor";
-import { HomeHero } from "@/components/home-hero";
 import { ImageCropper } from "@/components/image-cropper";
 import { ImportResultBanner } from "@/components/import-result-banner";
 import { TextInputZone } from "@/components/text-input-zone";
@@ -19,7 +18,7 @@ import { apiClient } from "@/lib/api-client";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { usePageTitle } from "@/lib/page-title";
 import { useQuestionImport } from "@/lib/use-question-import";
-import type { Notebook, PaginatedResponse } from "@/types/api";
+import type { Notebook } from "@/types/api";
 
 /** 直接录入（不经 AI）提交的内容 */
 interface DirectEntry {
@@ -42,7 +41,6 @@ function HomeContent() {
     const initialNotebookId = searchParams.get("notebook");
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [autoSelectedNotebookId, setAutoSelectedNotebookId] = useState<string | null>(null);
-    const [dueCount, setDueCount] = useState<number | null>(null);
     // Input mode: "image" for photo upload, "text" for AI solve, "direct" for manual entry
     const [inputMode, setInputMode] = useState<"image" | "text" | "direct">("image");
 
@@ -66,9 +64,6 @@ function HomeContent() {
         apiClient.get<Notebook[]>("/api/notebooks")
             .then(data => setNotebooks(data))
             .catch(err => frontendLogger.error('[Home]', 'Failed to fetch notebooks', { error: err }));
-        apiClient.get<PaginatedResponse<unknown>>("/api/review/due?pageSize=1")
-            .then(data => setDueCount(data.total))
-            .catch(err => frontendLogger.error('[Home]', 'Failed to fetch due reviews', { error: err }));
     }, []);
 
     const handleDirectSave = async (data: DirectEntry): Promise<void> => {
@@ -83,7 +78,6 @@ function HomeContent() {
         flow.setAnalysisStep('idle');
     };
 
-    const totalItems = notebooks.reduce((sum, n) => sum + (n._count?.errorItems || 0), 0);
     const inputModes = [
         { value: "image" as const, icon: Camera, label: t.app?.uploadImage || "Take Photo" },
         { value: "text" as const, icon: Sparkles, label: t.app?.manualInput || "Manual Input" },
@@ -94,17 +88,17 @@ function HomeContent() {
         <main className="min-h-screen">
             <ProgressFeedback status={flow.analysisStep} />
 
-            <div className={`mx-auto space-y-6 px-4 py-6 md:px-8 md:py-8 ${flow.step === "review" ? "max-w-6xl" : "max-w-4xl"}`}>
+            <div className={`mx-auto space-y-8 px-4 py-6 md:px-10 md:py-10 ${flow.step === "review" ? "max-w-6xl" : "max-w-6xl"}`}>
                 {flow.step === "upload" && (
                     <>
-                        <HomeHero
-                            notebookCount={notebooks.length}
-                            itemCount={totalItems}
-                            dueCount={dueCount}
-                            targetNotebook={initialNotebookId ? targetNotebook?.name : undefined}
-                        />
-
-                        <div className="space-y-4">
+                        <div className="rounded-[1.35rem] border border-border/80 bg-card p-4 md:p-6">
+                            <div className="mb-5 flex flex-col gap-2 border-b border-border/70 pb-4 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                    <h2 className="text-base font-semibold">录入一题，找到一个卡点</h2>
+                                    <p className="mt-1 text-sm text-muted-foreground">先保留原题与错答，再让 AI 帮你校对和归档。</p>
+                                </div>
+                                <span className="text-xs text-muted-foreground">原图会和错题关联保存</span>
+                            </div>
                             <SegmentedControl options={inputModes} value={inputMode} onChange={setInputMode} />
 
                             {flow.lastImported && (

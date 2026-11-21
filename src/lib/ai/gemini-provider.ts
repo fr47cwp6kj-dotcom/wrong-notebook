@@ -1,3 +1,4 @@
+import { parseGapImageDataUrl } from '../knowledge-gaps';
 import type { GapInput, GapResult } from '../knowledge-gaps';
 import { parseGapResult } from './gap-result';
 import { GoogleGenAI } from "@google/genai";
@@ -387,9 +388,15 @@ export class GeminiProvider implements AIService {
         logger.info({ provider: 'Gemini' }, '知识漏洞诊断请求');
 
         try {
+            const image = parseGapImageDataUrl(input.imageDataUrl);
+            const contents: GeminiContent = image ? [
+                { text: generateGapPrompt(input) },
+                { inlineData: { mimeType: image.mimeType, data: image.base64 } },
+                { text: '请结合原题图片核对图形、数轴、选项和标注，再根据文字证据给出候选知识漏洞诊断。' },
+            ] : generateGapPrompt(input);
             const response = await this.retryOperation(() => this.ai.models.generateContent({
                 model: this.modelName,
-                contents: generateGapPrompt(input)
+                contents
             }));
 
             const text = response.text || '';

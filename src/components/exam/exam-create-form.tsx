@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Wand2 } from "lucide-react";
+import { Check, ChevronDown, Loader2, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TagInput } from "@/components/tag-input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { apiClient } from "@/lib/api-client";
 import type { ExamPickRule, ExamScope, Notebook } from "@/types/api";
@@ -31,6 +30,10 @@ export function ExamCreateForm() {
     const [title, setTitle] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [knowledgePoints, setKnowledgePoints] = useState<{ existing: string[]; all: string[] }>({ existing: [], all: [] });
+    const [tagPickerOpen, setTagPickerOpen] = useState(false);
+    const [tagGroupOpen, setTagGroupOpen] = useState<"existing" | "all" | null>(null);
+    const [tagSearch, setTagSearch] = useState("");
 
     useEffect(() => {
         apiClient.get<Notebook[]>("/api/notebooks")
@@ -41,8 +44,20 @@ export function ExamCreateForm() {
             .catch(() => setNotebooks([]));
     }, []);
 
+    useEffect(() => {
+        if (subjectIds.length === 0) {
+            return;
+        }
+        const query = subjectIds.map((id) => `subjectId=${encodeURIComponent(id)}`).join('&');
+        apiClient.get<{ existing: string[]; all: string[] }>(`/api/exams/knowledge-points?${query}`)
+            .then(setKnowledgePoints)
+            .catch(() => setKnowledgePoints({ existing: [], all: [] }));
+    }, [subjectIds]);
+
     const toggleNotebook = (id: string) => {
-        setSubjectIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+        const next = subjectIds.includes(id) ? subjectIds.filter((value) => value !== id) : [...subjectIds, id];
+        setSubjectIds(next);
+        if (next.length === 0) setKnowledgePoints({ existing: [], all: [] });
     };
 
     const handleSubmit = async (event: React.FormEvent) => {
@@ -107,7 +122,30 @@ export function ExamCreateForm() {
 
                     <div className="space-y-2">
                         <Label>{t.exam.tags}</Label>
-                        <TagInput value={tagNames} onChange={setTagNames} placeholder={t.exam.tagsPlaceholder} />
+                        <button type="button" className="flex min-h-10 w-full items-center justify-between rounded-md border bg-background px-3 text-left text-sm" onClick={() => setTagPickerOpen((open) => !open)} aria-expanded={tagPickerOpen}>
+                            <span className={tagNames.length > 0 ? "text-foreground" : "text-muted-foreground"}>
+                                {tagNames.length > 0 ? `已选择 ${tagNames.length} 个知识点` : t.exam.tagsPlaceholder}
+                            </span>
+                            <ChevronDown className={`h-4 w-4 transition-transform ${tagPickerOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        {tagNames.length > 0 && <div className="flex flex-wrap gap-1">{tagNames.map((tag) => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs">{tag}<button type="button" aria-label={`移除 ${tag}`} onClick={() => setTagNames((prev) => prev.filter((value) => value !== tag))}><X className="h-3 w-3" /></button></span>)}</div>}
+                        {tagPickerOpen && <div className="space-y-2 rounded-md border bg-background p-3 shadow-sm"><div className="grid gap-2 sm:grid-cols-2">
+                            {(["existing", "all"] as const).map((group) => {
+                                const isOpen = tagGroupOpen === group;
+                                const count = knowledgePoints[group].length;
+                                return <button key={group} type="button" className={`flex min-h-10 items-center justify-between rounded-md border bg-background px-3 text-left text-sm transition-colors ${isOpen ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`} onClick={() => { setTagGroupOpen(isOpen ? null : group); setTagSearch(""); }} aria-expanded={isOpen}>
+                                    <span>{group === "existing" ? `错题中已有${count ? ` (${count})` : ""}` : `完整知识点库${count ? ` (${count})` : ""}`}</span>
+                                    <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                                </button>;
+                            })}
+                        </div>
+                        {tagGroupOpen && <div>
+                            <Input value={tagSearch} onChange={(event) => setTagSearch(event.target.value)} placeholder="搜索知识点…" className="mb-3" />
+                            <div className="max-h-64 overflow-y-auto">
+                                <TagGroup title={tagGroupOpen === "existing" ? "错题中已有" : "完整知识点库"} tags={knowledgePoints[tagGroupOpen]} selected={tagNames} search={tagSearch} onToggle={(tag) => setTagNames((prev) => prev.includes(tag) ? prev.filter((value) => value !== tag) : [...prev, tag])} />
+                                {knowledgePoints[tagGroupOpen].filter((tag) => tag.toLocaleLowerCase().includes(tagSearch.trim().toLocaleLowerCase())).length === 0 && <p className="py-3 text-center text-sm text-muted-foreground">{subjectIds.length === 0 ? "请先选择错题本" : "暂无匹配知识点"}</p>}
+                            </div>
+                        </div>}</div>}
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-3">
@@ -184,4 +222,10 @@ export function ExamCreateForm() {
             </CardContent>
         </Card>
     );
+}
+
+function TagGroup({ title, tags, selected, search, onToggle }: { title: string; tags: string[]; selected: string[]; search: string; onToggle: (tag: string) => void }) {
+    const filtered = tags.filter((tag) => tag.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+    if (filtered.length === 0) return null;
+    return <div className="space-y-1"><p className="text-xs font-medium text-muted-foreground">{title}</p>{filtered.map((tag) => <label key={tag} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60"><Checkbox checked={selected.includes(tag)} onCheckedChange={() => onToggle(tag)} /><span>{tag}</span>{selected.includes(tag) && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}</label>)}</div>;
 }

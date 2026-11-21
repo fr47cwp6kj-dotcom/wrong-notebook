@@ -21,7 +21,7 @@ const geistMono = localFont({
 });
 
 export const viewport: Viewport = {
-  themeColor: '#4f46e5',
+  themeColor: '#146b63',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -31,11 +31,11 @@ export const viewport: Viewport = {
 // 浏览器标题由各页面通过 usePageTitle 设置，这里的 <title> 只作首屏默认值；
 // 不放进 metadata，避免 Next 流式输出的 metadata 覆盖页面设置的标题
 export const metadata: Metadata = {
-  description: "基于AI的智能错题管理系统，帮助学生高效整理、分析和复习错题",
+  description: "找到知识的缝隙，补上思维的缺口。",
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: '错因 Agent',
+    title: '知隙',
   },
   formatDetection: {
     telephone: false,
@@ -54,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <title>错因 Agent</title>
+        <title>知隙</title>
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

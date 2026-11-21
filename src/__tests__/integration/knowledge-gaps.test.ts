@@ -22,7 +22,11 @@ let directory: string;
 const context = (id = 'q1') => ({ params: Promise.resolve({ id }) });
 const post = (body: object, id = 'q1') => POST(new Request('http://localhost', { method: 'POST', body: JSON.stringify(body) }), context(id));
 async function createManual(id = 'q1') {
-    expect((await post({ action: 'manual', candidate: gapFixture }, id)).status).toBe(200);
+    const candidate = id === 'q2' ? {
+        ...gapFixture,
+        minimalPractice: [{ ...gapFixture.minimalPractice[0], question: 'x + 4 = 10，两边应做什么运算？', answer: '同时减 4' }],
+    } : gapFixture;
+    expect((await post({ action: 'manual', candidate }, id)).status).toBe(200);
     return database.gapDiagnosis.findFirstOrThrow({ where: { errorItemId: id } });
 }
 beforeAll(() => {
@@ -76,7 +80,8 @@ describe('知识漏洞闭环（真实 SQLite）', () => {
     it('确认与人工复核不可绕过；重复请求只计一次；跨题共享单元', async () => {
         for (const id of ['q1', 'q2']) {
             const d = await createManual(id);
-            const practice = { action: 'practice', diagnosisId: d.id, requestId: randomUUID(), practiceIndex: 0, answer: '两边同减', result: 'correct' };
+            const answer = id === 'q2' ? '同时减 4' : gapFixture.minimalPractice[0].answer;
+            const practice = { action: 'practice', diagnosisId: d.id, requestId: randomUUID(), practiceIndex: 0, answer, result: 'correct' };
             expect((await post(practice, id)).status).toBe(400);
             expect((await post({ action: 'status', diagnosisId: d.id, status: 'confirmed' }, id)).status).toBe(200);
             expect((await post(practice, id)).status).toBe(400);

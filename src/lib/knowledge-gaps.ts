@@ -39,7 +39,14 @@ export interface GapInput {
     subject: string;
     language: 'zh' | 'en';
     units: Array<{ name: string; triggerRule: string; boundary: string }>;
+    /** 原题图片仅作为题干图示证据，不得当作学生原始作答。 */
+    imageDataUrl?: string;
     dialogue?: Array<{ question: string; answer: string; mode: 'text' | 'option' | 'unknown' }>;
+}
+
+export function parseGapImageDataUrl(value: string | undefined): { mimeType: string; base64: string } | null {
+    const match = value?.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,([\s\S]+)$/i);
+    return match ? { mimeType: match[1].toLowerCase(), base64: match[2] } : null;
 }
 export const normalizeGapText = (value: string) => value.normalize('NFKC').replace(/\s+/g, ' ').trim();
 

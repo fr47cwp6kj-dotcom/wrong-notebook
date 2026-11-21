@@ -24,13 +24,13 @@ export default function KnowledgeUnitsPage() {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入页面时加载知识单元。
         load();
     }, [load]);
-    return <main className="mx-auto max-w-5xl space-y-6 px-4 py-8">
-        <div className="flex items-center justify-between"><h1 className="text-2xl font-bold">{t.gaps.library}</h1><Button variant="outline" asChild><Link href="/notebooks">{t.gaps.back}</Link></Button></div>
-        <p className="text-muted-foreground">{t.gaps.unitIntro}</p>
+    return <main className="mx-auto max-w-6xl space-y-7 px-4 py-8 md:px-10 md:py-10">
+        <div className="flex items-end justify-between gap-4"><div><p className="mb-2 text-sm text-muted-foreground">把错题归成可验证的规则</p><h1 className="font-serif text-4xl font-normal tracking-tight">{t.gaps.library}</h1></div><Button variant="outline" asChild><Link href="/notebooks">{t.gaps.back}</Link></Button></div>
+        <p className="max-w-2xl leading-6 text-muted-foreground">{t.gaps.unitIntro}</p>
         {loading && <p>{t.common.loading}</p>}
         {error && <div role="alert">{t.gaps.failed}<Button variant="ghost" onClick={load}>{t.gaps.reload}</Button></div>}
         {!loading && !error && !units.length && <p>{t.gaps.noUnits}</p>}
-        <div className="grid gap-4 md:grid-cols-2">{units.map(unit => <Card key={unit.id}><CardHeader><CardTitle className="text-lg">{unit.name}</CardTitle><Badge className="w-fit" variant="outline">{t.gaps.verificationStages[unit.verificationStage]}</Badge></CardHeader><CardContent className="space-y-3">
+        <div className="grid gap-4 md:grid-cols-2">{units.map(unit => <Card key={unit.id} className="rounded-2xl border-border/80 shadow-none"><CardHeader className="space-y-3"><CardTitle className="text-lg">{unit.name}</CardTitle><Badge className="w-fit rounded-full px-2.5 py-1" variant="outline">{t.gaps.verificationStages[unit.verificationStage]}</Badge></CardHeader><CardContent className="space-y-3">
             <p className="font-medium">{unit.triggerRule}</p><p className="text-sm text-muted-foreground">{unit.boundary}</p>
             <p className="text-sm">{t.gaps.attempts}：{unit.attempts} · {t.gaps.contexts}：{unit.contexts}</p>
             {unit.confusable.length > 0 && <div className="space-y-2 rounded border p-3 text-sm"><h3 className="font-medium">{t.gaps.confusable}</h3>

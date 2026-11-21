@@ -29,6 +29,7 @@ const recordSchema = z.object({
     hintLevel: z.number().int().min(0).max(3).optional(),
     studentAnswer: z.string().max(4000).optional(),
     revealedAnswer: z.boolean().optional(),
+    originalImageUrl: z.string().max(20 * 1024 * 1024).optional(),
     mode: z.enum(['normal', 'warning', 'exam']).optional(),
     takenAt: z.string().datetime({ offset: true }).optional(),
 });
@@ -87,6 +88,7 @@ export async function POST(req: Request) {
                     questionText,
                     answerText,
                     analysis,
+                    originalImageUrl: parsed.data.originalImageUrl || null,
                     figureSvg,
                     source,
                 } : {}),
